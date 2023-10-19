@@ -204,10 +204,13 @@ defmodule GenBuffer do
 
   @doc false
   @impl GenServer
-  @spec handle_info(:flush, map()) :: {:noreply, map(), {:continue, :flush}}
-  def handle_info(:flush, state) do
+  @spec handle_info({:timeout, reference(), :flush}, map()) ::
+          {:noreply, map()} | {:noreply, map(), {:continue, :flush}}
+  def handle_info({:timeout, timer, :flush}, state) when timer == state.timer do
     {:noreply, state, {:continue, :flush}}
   end
+
+  def handle_info(_, state), do: {:noreply, state}
 
   ################################
   # Private API
@@ -245,7 +248,9 @@ defmodule GenBuffer do
   defp schedule_next_flush(%{timeout: :infinity} = state), do: state
 
   defp schedule_next_flush(state) do
-    timer = Process.send_after(self(), :flush, state.timeout)
+    # We use `:erlang.start_timer/3` to include the timer ref in the message
+    # This is necessary for handling occasional race conditions
+    timer = :erlang.start_timer(state.timeout, self(), :flush)
     Map.put(state, :timer, timer)
   end
 
@@ -267,9 +272,9 @@ defmodule GenBuffer do
   end
 
   defp flush?(state) do
-    compare(state.length, state.max_length) or compare(state.size, state.max_size)
+    exceeds?(state.length, state.max_length) or exceeds?(state.size, state.max_size)
   end
 
-  defp compare(_, :infinity), do: false
-  defp compare(num, max), do: num >= max
+  defp exceeds?(_, :infinity), do: false
+  defp exceeds?(num, max), do: num >= max
 end
