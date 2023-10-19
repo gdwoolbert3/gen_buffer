@@ -1,20 +1,50 @@
 defmodule GenBuffer do
   @moduledoc """
-  A generic data buffer process.
+  A GenBuffer is a process that maintains a collection of items and flushes
+  them once certain conditions have been met.
+
+  GenBuffers can flush based on a timeout, a maximum length (item count), a
+  maximum byte size, or a combination of the three. When multiple conditions are
+  used, the GenBuffer will flush when the **first** condition is met.
+
+  GenBuffers also come with a number of helpful tools for testing and debugging.
   """
 
   use GenServer
 
   @type t :: GenServer.name() | pid()
 
-  @gen_buffer_fields [:callback, :max_length, :max_size, :buffer_timeout]
+  @gen_buffer_fields [:callback, :buffer_timeout, :max_length, :max_size]
 
   ################################
   # Public API
   ################################
 
   @doc """
-  Starts a new GenBuffer.
+  Starts a `GenBuffer` process linked to the current process.
+
+  ## Options
+
+  A GenBuffer can be started with the following parameters.
+
+    * `:callback` - The function that will be invoked to handle a flush. This
+      function should expect a single parameter: a list of items. (Required
+      `function()`)
+
+    * `:buffer_timeout` - The maximum time (in ms) allowed between flushes of
+      the GenBuffer. Once this amount of time has passed, the GenBuffer will be
+      flushed. (Optional `non_neg_integer()`, Default = `:infinity`)
+
+    * `:max_length` - The maximum allowed length (item count) of the GenBuffer.
+      Once the limit is hit, the GenBuffer will be flushed. (Optional
+      `non_neg_integer()`, Default = `:infinity`)
+
+    * `:max_size` - The maximum allowed size (in bytes) of the GenBuffer. Once
+      the limit is hit (or exceeded), the GenBuffer will be flushed. For more
+      information on how size is computed, see `GenBuffer.size/1`. (Optional
+      `non_neg_integer()`, Default = `:infinity`)
+
+  Additionally, a GenBuffer can also be started with any `GenServer` options.
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
@@ -23,31 +53,96 @@ defmodule GenBuffer do
   end
 
   @doc """
-  Dumps the contents of the given GenBuffer, bypassing a flush.
+  Dumps the contents of the given `GenBuffer` to a list, bypassing a flush
+  callback and resetting the buffer.
+
+  While this behavior may occasionally be desriable in a production environment,
+  it is intended to be used primarily for testing and debugging.
+
+  ## Example
+
+      GenBuffer.insert(:test_buffer, "foo")
+      GenBuffer.insert(:test_buffer, "bar")
+
+      GenBuffer.dump(:test_buffer)
+      #=> ["foo", "bar"]
+
+      GenBuffer.length(:test_buffer)
+      #=> 0
   """
   @spec dump(t()) :: list()
   def dump(buffer), do: GenServer.call(buffer, :dump)
 
   @doc """
-  Synchonously flushes the given GenBuffer.
+  Flushes the given `GenBuffer`, regardless of whether or not the flush conditions
+  have been met.
+
+  While this behavior may occasionally be desriable in a production environment,
+  it is intended to be used primarily for testing and debugging.
+
+  ## Example
+
+      GenBuffer.insert(:test_buffer, "foo")
+      GenBuffer.insert(:test_buffer, "bar")
+
+      # Assuming the flush callback is `IO.inspect/1`
+      GenBuffer.flush(:test_buffer)
+      #=> outputs ["foo", "bar"]
+
+      GenBuffer.length(:test_buffer)
+      #=> 0
   """
   @spec flush(t()) :: :ok
   def flush(buffer), do: GenServer.call(buffer, :flush)
 
   @doc """
-  Inserts the given item into the given GenBuffer.
+  Inserts the given item into the given `GenBuffer`.
+
+  ## Example
+
+      GenBuffer.insert(:test_buffer, "foo")
+      #=> :test_buffer items = ["foo"]
+
+      GenBuffer.insert(:test_buffer, "bar")
+      #=> :test_buffer items = ["foo", "bar"]
   """
   @spec insert(t(), term()) :: :ok
   def insert(buffer, item), do: GenServer.call(buffer, {:insert, item})
 
   @doc """
-  Returns the length of the given GenBuffer.
+  Returns the length (item count) of the given `GenBuffer`.
+
+  While this behavior may occasionally be desriable in a production environment,
+  it is intended to be used primarily for testing and debugging.
+
+  ## Example
+
+      GenBuffer.insert(:test_buffer, "foo")
+      GenBuffer.insert(:test_buffer, "bar")
+
+      GenBuffer.length(:test_buffer)
+      #=> 2
   """
   @spec length(t()) :: non_neg_integer()
   def length(buffer), do: GenServer.call(buffer, :length)
 
   @doc """
-  Retuns the size (in bytes) of the given GenBuffer.
+  Retuns the size (in bytes) of the given `GenBuffer`.
+
+  Item size is computed using `Kernel.byte_size/1`. Because this function requires
+  a bitstring input, non-bitstring items are first transformed into binary using
+  `:erlang.term_to_binary/1`.
+
+  While this behavior may occasionally be desriable in a production environment,
+  it is intended to be used primarily for testing and debugging.
+
+  ## Example
+
+      GenBuffer.insert(:test_buffer, "foo")
+      GenBuffer.insert(:test_buffer, "bar")
+
+      GenBuffer.size(:test_buffer)
+      #=> 6
   """
   @spec size(t()) :: non_neg_integer()
   def size(buffer), do: GenServer.call(buffer, :size)

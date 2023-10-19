@@ -12,6 +12,7 @@ defmodule GenBuffer.MixProject do
       dialyzer: dialyzer(),
       start_permanent: Mix.env() == :prod,
       name: "GenBuffer",
+      docs: docs(),
       aliases: aliases(),
       preferred_cli_env: preferred_cli_env(),
       deps: deps()
@@ -29,6 +30,14 @@ defmodule GenBuffer.MixProject do
     [
       plt_file: {:no_warn, "dialyzer/dialyzer.plt"},
       plt_add_apps: [:ex_unit, :mix]
+    ]
+  end
+
+  defp docs do
+    [
+      extras: ["README.md"],
+      main: "readme",
+      source_url: "https://github.com/gdwoolbert3/gen_buffer"
     ]
   end
 
@@ -62,6 +71,7 @@ defmodule GenBuffer.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:ex_doc, "~> 0.30.8", only: :dev, runtime: false},
       {:credo, "~> 1.7.0", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4.1", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.13.0", only: [:dev, :test], runtime: false}
