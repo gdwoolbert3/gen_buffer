@@ -1,6 +1,6 @@
 defmodule GenBuffer do
   @moduledoc """
-  TODO(Gordon) - Add this
+  A generic data buffer process.
   """
 
   use GenServer
