@@ -12,7 +12,7 @@ TODO(Gordon) - Add this
 
 ## Getting Started
 
-We easily can start a GenBuffer by adding it directly to a supervision tree.
+We can easily start a GenBuffer by adding it directly to a supervision tree.
 
 ```elixir
 opts = [callback: &IO.inspect/1, buffer_timeout: 5_000, name: :test_buffer]
