@@ -12,6 +12,8 @@ defmodule GenBuffer do
 
   use GenServer
 
+  alias GenBuffer.State
+
   @type t :: GenServer.name() | pid()
 
   @gen_buffer_fields [:callback, :buffer_timeout, :max_length, :max_size]
@@ -25,7 +27,7 @@ defmodule GenBuffer do
 
   ## Options
 
-  A GenBuffer can be started with the following parameters.
+  A GenBuffer can be started with the following options:
 
     * `:callback` - The function that will be invoked to handle a flush. This
       function should expect a single parameter: a list of items. (Required
@@ -50,6 +52,55 @@ defmodule GenBuffer do
   def start_link(opts \\ []) do
     {opts, server_opts} = Keyword.split(opts, @gen_buffer_fields)
     GenServer.start_link(__MODULE__, opts, server_opts)
+  end
+
+  @doc """
+  Lazily chunks an enumerable based on one or more GenBuffer flush conditions.
+
+  This function currently supports length and size conditions. If multiple
+  conditions are specified, a chunk is emitted once the **first** condition is
+  met (just like a GenBuffer process).
+
+  While this function is useful in it's own right, it's included primarily as
+  another way to synchronously test applications that use GenBuffer.
+
+  ## Options
+
+  An enumerable can be chunked with the following options:
+
+    * `:max_length` - The maximum allowed length (item count) of a chunk.
+      (Optional `non_neg_integer()`, Default = `:infinity`)
+
+    * `:max_size` - The maximum allowed size (in bytes) of a chunk. (Optional
+      `non_neg_integer()`, Default = `:infinity`)
+
+  > #### Warning {: .warning}
+  >
+  > Not including either of the options above is permitted but will result in a
+  > single chunk being emitted. One can achieve a similar result in a more performant
+  > way using `Stream.into/2`. In that same vein, including only a `:max_length`
+  > condition makes this function a less performant version of `Stream.chunk_every/2`.
+  > This function is optimized for chunking by either size or size **and** count. Any other
+  > chunking strategy can likely be achieved in a more efficient way using other methods.
+
+  ## Example
+
+      enum = ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
+
+      enum
+      |> GenBuffer.chunk_enum!(max_length: 3, max_size: 10)
+      |> Enum.into([])
+      #=> [["foo", "bar", "baz"], ["foobar", "barbaz"], ["foobarbaz"]]
+  """
+  @spec chunk_enum!(Enumerable.t(), keyword()) :: Enumerable.t()
+  def chunk_enum!(enum, opts \\ []) do
+    opts
+    |> Keyword.take([:max_length, :max_size])
+    |> init_state(false)
+    |> case do
+      {:ok, state} -> Stream.chunk_while(enum, state, &do_insert(&2, &1), &chunk_end/1)
+      {:error, reason} -> raise(ArgumentError, to_message(reason))
+    end
   end
 
   @doc """
@@ -80,6 +131,13 @@ defmodule GenBuffer do
   While this behavior may occasionally be desriable in a production environment,
   it is intended to be used primarily for testing and debugging.
 
+  ## Options
+
+  A GenBuffer can be manually flushed with the following options:
+
+    * `:async` - Determines whether or not the flush will be asynchronous. (Optional
+      `boolean()`, Default = `true`)
+
   ## Example
 
       GenBuffer.insert(:test_buffer, "foo")
@@ -92,8 +150,14 @@ defmodule GenBuffer do
       GenBuffer.length(:test_buffer)
       #=> 0
   """
-  @spec flush(t()) :: :ok
-  def flush(buffer), do: GenServer.call(buffer, :flush)
+  @spec flush(t(), keyword()) :: :ok
+  def flush(buffer, opts \\ []) do
+    if Keyword.get(opts, :async, true) do
+      GenServer.call(buffer, :async_flush)
+    else
+      GenServer.call(buffer, :sync_flush)
+    end
+  end
 
   @doc """
   Inserts the given item into the given `GenBuffer`.
@@ -153,128 +217,116 @@ defmodule GenBuffer do
 
   @doc false
   @impl GenServer
-  @spec init(keyword()) :: {:ok, map(), {:continue, :refresh}}
+  @spec init(keyword()) :: {:ok, State.t()} | {:stop, :invalid_callback | :invalid_limit}
   def init(opts) do
-    state = init_state(opts)
-    {:ok, state, {:continue, :refresh}}
-  end
-
-  @doc false
-  @impl GenServer
-  @spec handle_call(atom() | tuple(), GenServer.from(), map()) ::
-          {:reply, :ok, map()} | {:reply, :ok, map(), {:continue, :flush}}
-  def handle_call(:dump, _from, state) do
-    items = get_buffer_items(state)
-    {:reply, items, state, {:continue, :refresh}}
-  end
-
-  def handle_call(:flush, _from, state) do
-    {:reply, :ok, state, {:continue, :flush}}
-  end
-
-  def handle_call({:insert, item}, _from, state) do
-    state = buffer_item(state, item)
-
-    if flush?(state) do
-      {:reply, :ok, state, {:continue, :flush}}
-    else
-      {:reply, :ok, state}
+    case init_state(opts) do
+      {:ok, state} -> {:ok, refresh_state(state)}
+      {:error, reason} -> {:stop, reason}
     end
   end
 
-  def handle_call(:length, _from, state), do: {:reply, state.length, state}
-  def handle_call(:size, _from, state), do: {:reply, state.size, state}
+  @doc false
+  @impl GenServer
+  @spec handle_call(term(), GenServer.from(), State.t()) ::
+          {:reply, term(), State.t()} | {:reply, term(), State.t(), {:continue, {:flush, list()}}}
+  def handle_call(:dump, _from, state) do
+    {:reply, State.items(state), refresh_state(state)}
+  end
+
+  def handle_call(:async_flush, _from, state) do
+    {state, items} = flush_state(state)
+    {:reply, :ok, state, {:continue, {:flush, items}}}
+  end
+
+  def handle_call(:sync_flush, _from, state) do
+    {:reply, :ok, do_sync_flush(state)}
+  end
+
+  def handle_call({:insert, item}, _from, state) do
+    case do_insert(state, item) do
+      {:cont, items, state} -> {:reply, :ok, state, {:continue, {:flush, items}}}
+      {:cont, state} -> {:reply, :ok, state}
+    end
+  end
+
+  def handle_call(:length, _from, state), do: {:reply, State.length(state), state}
+  def handle_call(:size, _from, state), do: {:reply, State.size(state), state}
 
   @doc false
   @impl GenServer
-  @spec handle_continue(:flush | :refresh, map()) ::
-          {:noreply, map()} | {:noreply, map(), {:continue, :refresh}}
-  def handle_continue(:flush, state) do
-    state
-    |> get_buffer_items()
-    |> state.callback.()
-
-    {:noreply, state, {:continue, :refresh}}
-  end
-
-  def handle_continue(:refresh, state) do
-    state = refresh_state(state)
+  @spec handle_continue(term(), State.t()) :: {:noreply, State.t()}
+  def handle_continue({:flush, items}, state) do
+    state.callback.(items)
     {:noreply, state}
   end
 
   @doc false
   @impl GenServer
-  @spec handle_info({:timeout, reference(), :flush}, map()) ::
-          {:noreply, map()} | {:noreply, map(), {:continue, :flush}}
+  @spec handle_info(term(), State.t()) ::
+          {:noreply, State.t()} | {:noreply, State.t(), {:continue, {:flush, list()}}}
   def handle_info({:timeout, timer, :flush}, state) when timer == state.timer do
-    {:noreply, state, {:continue, :flush}}
+    {state, items} = flush_state(state)
+    {:noreply, state, {:continue, {:flush, items}}}
   end
 
   def handle_info(_, state), do: {:noreply, state}
+
+  @doc false
+  @impl GenServer
+  @spec terminate(term(), State.t()) :: :ok | State.t()
+  def terminate(reason, _) when reason in [:invalid_callback, :invalid_limit], do: :ok
+  def terminate(_, state), do: do_sync_flush(state)
 
   ################################
   # Private API
   ################################
 
-  defp init_state(opts) do
-    callback = Keyword.fetch!(opts, :callback)
+  defp init_state(opts, process \\ true) do
+    callback = Keyword.get(opts, :callback)
     max_length = Keyword.get(opts, :max_length, :infinity)
     max_size = Keyword.get(opts, :max_size, :infinity)
     timeout = Keyword.get(opts, :buffer_timeout, :infinity)
-
-    %{
-      callback: callback,
-      max_length: max_length,
-      max_size: max_size,
-      timeout: timeout,
-      timer: nil
-    }
+    State.new(callback, max_length, max_size, timeout, process)
   end
+
+  defp do_insert(state, item) do
+    state = State.insert(state, item)
+
+    if State.flush?(state) do
+      {state, items} = flush_state(state)
+      {:cont, items, state}
+    else
+      {:cont, state}
+    end
+  end
+
+  defp do_sync_flush(state) do
+    {state, items} = flush_state(state)
+    state.callback.(items)
+    state
+  end
+
+  defp flush_state(state), do: {refresh_state(state), State.items(state)}
+
+  defp refresh_state(%State{timeout: :infinity} = state), do: State.refresh(state)
 
   defp refresh_state(state) do
-    state
-    |> cancel_upcoming_flush()
-    |> schedule_next_flush()
-    |> Map.merge(%{buffer: [], size: 0, length: 0})
+    cancel_upcoming_flush(state)
+    timer = schedule_next_flush(state)
+    State.refresh(state, timer)
   end
 
-  defp cancel_upcoming_flush(%{timer: nil} = state), do: state
-
-  defp cancel_upcoming_flush(state) do
-    Process.cancel_timer(state.timer)
-    state
-  end
-
-  defp schedule_next_flush(%{timeout: :infinity} = state), do: state
+  defp cancel_upcoming_flush(%State{timer: nil}), do: :ok
+  defp cancel_upcoming_flush(state), do: Process.cancel_timer(state.timer)
 
   defp schedule_next_flush(state) do
     # We use `:erlang.start_timer/3` to include the timer ref in the message
     # This is necessary for handling occasional race conditions
-    timer = :erlang.start_timer(state.timeout, self(), :flush)
-    Map.put(state, :timer, timer)
+    :erlang.start_timer(state.timeout, self(), :flush)
   end
 
-  defp get_buffer_items(state), do: Enum.reverse(state.buffer)
+  defp chunk_end(%State{buffer: []} = state), do: {:cont, state}
+  defp chunk_end(state), do: {:cont, State.items(state), refresh_state(state)}
 
-  defp buffer_item(state, item) do
-    size = state.size + item_size(item)
-    length = state.length + 1
-    buffer = [item | state.buffer]
-    Map.merge(state, %{size: size, buffer: buffer, length: length})
-  end
-
-  defp item_size(item) when is_bitstring(item), do: byte_size(item)
-
-  defp item_size(item) do
-    item
-    |> :erlang.term_to_binary()
-    |> byte_size()
-  end
-
-  defp flush?(state) do
-    exceeds?(state.length, state.max_length) or exceeds?(state.size, state.max_size)
-  end
-
-  defp exceeds?(_, :infinity), do: false
-  defp exceeds?(num, max), do: num >= max
+  defp to_message(reason), do: String.replace(to_string(reason), "_", " ")
 end
