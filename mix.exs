@@ -45,7 +45,7 @@ defmodule ExBuffer.MixProject do
     [
       extras: ["README.md"],
       main: "readme",
-      source_url: "https://github.com/gdwoolbert3/gen_buffer",
+      source_url: "https://github.com/gdwoolbert3/ex_buffer",
       authors: ["Gordon Woolbert"]
     ]
   end
@@ -55,7 +55,7 @@ defmodule ExBuffer.MixProject do
       files: ["lib", "mix.exs", "README*", "LICENSE"],
       maintainers: ["Gordon Woolbert"],
       licenses: ["MIT"],
-      links: %{"GitHub" => "https://github.com/gdwoolbert3/gen_buffer"}
+      links: %{"GitHub" => "https://github.com/gdwoolbert3/ex_buffer"}
     ]
   end
 
