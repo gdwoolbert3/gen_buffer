@@ -1,4 +1,4 @@
-defmodule GenBuffer.State do
+defmodule ExBuffer.State do
   @moduledoc false
 
   defstruct [

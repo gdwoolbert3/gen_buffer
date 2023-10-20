@@ -1,17 +1,19 @@
-defmodule GenBuffer.MixProject do
+defmodule ExBuffer.MixProject do
   use Mix.Project
 
   @version "0.1.0"
 
-  # TODO(Gordon) - description, docs, package, deps, etc.
+  # TODO(Gordon) - package
   def project do
     [
-      app: :gen_buffer,
+      app: :ex_buffer,
       version: @version,
       elixir: "~> 1.14",
       dialyzer: dialyzer(),
       start_permanent: Mix.env() == :prod,
-      name: "GenBuffer",
+      description: description(),
+      package: package(),
+      name: "ExBuffer",
       docs: docs(),
       aliases: aliases(),
       preferred_cli_env: preferred_cli_env(),
@@ -33,12 +35,27 @@ defmodule GenBuffer.MixProject do
     ]
   end
 
+  defp description do
+    """
+    A simple and lightweight data buffer for Elixir.
+    """
+  end
+
   defp docs do
     [
       extras: ["README.md"],
       main: "readme",
       source_url: "https://github.com/gdwoolbert3/gen_buffer",
-      authors: ["Gordon Woolbert", "Nicholas Sweeting"]
+      authors: ["Gordon Woolbert"]
+    ]
+  end
+
+  defp package do
+    [
+      files: ["lib", "mix.exs", "README*", "LICENSE"],
+      maintainers: ["Gordon Woolbert"],
+      licenses: ["MIT"],
+      links: %{"GitHub" => "https://github.com/gdwoolbert3/gen_buffer"}
     ]
   end
 
