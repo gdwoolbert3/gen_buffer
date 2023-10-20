@@ -37,7 +37,8 @@ defmodule GenBuffer.MixProject do
     [
       extras: ["README.md"],
       main: "readme",
-      source_url: "https://github.com/gdwoolbert3/gen_buffer"
+      source_url: "https://github.com/gdwoolbert3/gen_buffer",
+      authors: ["Gordon Woolbert", "Nicholas Sweeting"]
     ]
   end
 

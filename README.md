@@ -42,12 +42,3 @@ GenBuffer.insert(:test_buffer, "baz")
 # 5 seconds after previous flush
 #=> outputs ["baz"]
 ```
-
-## Upcoming
-
-We're looking forward to adding the following features and enhancements to GenBuffer:
-
-* A `GenBuffer` behavior
-* The ability to see the time of the next flush
-* Length/size tracking performance enhancements
-* Stronger opts validation during start up

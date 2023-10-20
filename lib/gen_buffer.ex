@@ -76,12 +76,12 @@ defmodule GenBuffer do
 
   > #### Warning {: .warning}
   >
-  > Not including either of the options above will is permitted but will result in
-  > a single chunk being emitted. One can achieve a similar result in a more performant
-  > way using `Enum.into/2`. In that same vein, including only a `:max_length` condition
-  > is effectively a less performant version of `Enum.chunk_every/2`. This function is
-  > optimized for chunking by either size or size **and** count. Any other chunking
-  > strategy can likely be achieved in a more efficient way using other methods.
+  > Not including either of the options above is permitted but will result in a
+  > single chunk being emitted. One can achieve a similar result in a more performant
+  > way using `Stream.into/2`. In that same vein, including only a `:max_length`
+  > condition makes this function a less performant version of `Stream.chunk_every/2`.
+  > This function is optimized for chunking by either size or size **and** count. Any other
+  > chunking strategy can likely be achieved in a more efficient way using other methods.
 
   ## Example
 
