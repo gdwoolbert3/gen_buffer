@@ -133,7 +133,7 @@ defmodule ExBuffer do
 
   ## Options
 
-  An ExBuffer can be manually flushed with the following options:
+  An ExBuffer can be flushed with the following options:
 
     * `:async` - Determines whether or not the flush will be asynchronous. (Optional
       `boolean()`, Default = `true`)
