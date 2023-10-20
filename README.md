@@ -1,6 +1,7 @@
 # ExBuffer
 
 ![CI](https://github.com/gdwoolbert3/ex_buffer/actions/workflows/ci.yml/badge.svg)
+[![Package](https://img.shields.io/hexpm/v/ex_buffer.svg)](https://hex.pm/packages/ex_buffer)
 
 An ExBuffer is a process that maintains a collection of items and flushes them once certain conditions have been met.
 
