@@ -14,7 +14,7 @@ defmodule GenBufferTest do
     end
 
     test "will not start a GenBuffer with an invalid callback", ctx do
-      opts = Keyword.put(ctx.opts, :callback, fn x, y -> x + y end)
+      opts = Keyword.put(ctx.opts, :callback, fn x, y, z -> x + y + z end)
 
       assert {:error, {:invalid_callback, _}} = start_supervised({GenBuffer, opts})
       refute_receive {:data, _}
