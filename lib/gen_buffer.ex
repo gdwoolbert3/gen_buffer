@@ -12,6 +12,23 @@ defmodule GenBuffer do
 
   use GenServer
 
+  defmodule State do
+    @moduledoc false
+
+    defstruct [
+      :callback,
+      :max_length,
+      :max_size,
+      :timeout,
+      buffer: [],
+      length: 0,
+      size: 0,
+      timer: nil
+    ]
+
+    @type t :: %__MODULE__{}
+  end
+
   @type t :: GenServer.name() | pid()
 
   @gen_buffer_fields [:callback, :buffer_timeout, :max_length, :max_size]
@@ -153,7 +170,7 @@ defmodule GenBuffer do
 
   @doc false
   @impl GenServer
-  @spec init(keyword()) :: {:ok, map(), {:continue, :refresh}}
+  @spec init(keyword()) :: {:ok, State.t(), {:continue, :refresh}}
   def init(opts) do
     state = init_state(opts)
     {:ok, state, {:continue, :refresh}}
@@ -161,8 +178,8 @@ defmodule GenBuffer do
 
   @doc false
   @impl GenServer
-  @spec handle_call(atom() | tuple(), GenServer.from(), map()) ::
-          {:reply, :ok, map()} | {:reply, :ok, map(), {:continue, :flush}}
+  @spec handle_call(atom() | tuple(), GenServer.from(), State.t()) ::
+          {:reply, :ok, State.t()} | {:reply, :ok, State.t(), {:continue, :flush}}
   def handle_call(:dump, _from, state) do
     items = get_buffer_items(state)
     {:reply, items, state, {:continue, :refresh}}
@@ -187,8 +204,8 @@ defmodule GenBuffer do
 
   @doc false
   @impl GenServer
-  @spec handle_continue(:flush | :refresh, map()) ::
-          {:noreply, map()} | {:noreply, map(), {:continue, :refresh}}
+  @spec handle_continue(:flush | :refresh, State.t()) ::
+          {:noreply, State.t()} | {:noreply, State.t(), {:continue, :refresh}}
   def handle_continue(:flush, state) do
     state
     |> get_buffer_items()
@@ -204,8 +221,8 @@ defmodule GenBuffer do
 
   @doc false
   @impl GenServer
-  @spec handle_info({:timeout, reference(), :flush}, map()) ::
-          {:noreply, map()} | {:noreply, map(), {:continue, :flush}}
+  @spec handle_info({:timeout, reference(), :flush}, State.t()) ::
+          {:noreply, State.t()} | {:noreply, State.t(), {:continue, :flush}}
   def handle_info({:timeout, timer, :flush}, state) when timer == state.timer do
     {:noreply, state, {:continue, :flush}}
   end
@@ -221,37 +238,24 @@ defmodule GenBuffer do
     max_length = Keyword.get(opts, :max_length, :infinity)
     max_size = Keyword.get(opts, :max_size, :infinity)
     timeout = Keyword.get(opts, :buffer_timeout, :infinity)
-
-    %{
-      callback: callback,
-      max_length: max_length,
-      max_size: max_size,
-      timeout: timeout,
-      timer: nil
-    }
+    %State{callback: callback, max_length: max_length, max_size: max_size, timeout: timeout}
   end
 
   defp refresh_state(state) do
-    state
-    |> cancel_upcoming_flush()
-    |> schedule_next_flush()
-    |> Map.merge(%{buffer: [], size: 0, length: 0})
+    cancel_upcoming_flush(state)
+    timer = schedule_next_flush(state)
+    %{state | buffer: [], length: 0, size: 0, timer: timer}
   end
 
-  defp cancel_upcoming_flush(%{timer: nil} = state), do: state
+  defp cancel_upcoming_flush(%{timer: nil}), do: :ok
+  defp cancel_upcoming_flush(state), do: Process.cancel_timer(state.timer)
 
-  defp cancel_upcoming_flush(state) do
-    Process.cancel_timer(state.timer)
-    state
-  end
-
-  defp schedule_next_flush(%{timeout: :infinity} = state), do: state
+  defp schedule_next_flush(%{timeout: :infinity}), do: nil
 
   defp schedule_next_flush(state) do
     # We use `:erlang.start_timer/3` to include the timer ref in the message
     # This is necessary for handling occasional race conditions
-    timer = :erlang.start_timer(state.timeout, self(), :flush)
-    Map.put(state, :timer, timer)
+    :erlang.start_timer(state.timeout, self(), :flush)
   end
 
   defp get_buffer_items(state), do: Enum.reverse(state.buffer)
@@ -260,7 +264,7 @@ defmodule GenBuffer do
     size = state.size + item_size(item)
     length = state.length + 1
     buffer = [item | state.buffer]
-    Map.merge(state, %{size: size, buffer: buffer, length: length})
+    %{state | size: size, buffer: buffer, length: length}
   end
 
   defp item_size(item) when is_bitstring(item), do: byte_size(item)
