@@ -4,11 +4,19 @@ An ExBuffer is a process that maintains a collection of items and flushes them o
 
 ## Installation
 
-TODO(Gordon) - Add this
+This package can be installed by adding `:ex_buffer` to your list of dependencies in `mix.exs`:
+
+```elixir
+def deps do
+  [
+    {:ex_buffer "~> 0.1.0"}
+  ]
+end
+```
 
 ## Documentation
 
-TODO(Gordon) - Add this
+For additional documentation, see [HexDocs](https://hexdocs.pm/ex_buffer/readme.html).
 
 ## Getting Started
 
