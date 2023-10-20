@@ -1,68 +1,68 @@
-defmodule GenBuffer do
+defmodule ExBuffer do
   @moduledoc """
-  A GenBuffer is a process that maintains a collection of items and flushes
+  An ExBuffer is a process that maintains a collection of items and flushes
   them once certain conditions have been met.
 
-  GenBuffers can flush based on a timeout, a maximum length (item count), a
+  ExBuffers can flush based on a timeout, a maximum length (item count), a
   maximum byte size, or a combination of the three. When multiple conditions are
-  used, the GenBuffer will flush when the **first** condition is met.
+  used, the ExBuffer will flush when the **first** condition is met.
 
-  GenBuffers also come with a number of helpful tools for testing and debugging.
+  ExBuffers also come with a number of helpful tools for testing and debugging.
   """
 
   use GenServer
 
-  alias GenBuffer.State
+  alias ExBuffer.State
 
   @type t :: GenServer.name() | pid()
 
-  @gen_buffer_fields [:callback, :buffer_timeout, :max_length, :max_size]
+  @ex_buffer_fields [:callback, :buffer_timeout, :max_length, :max_size]
 
   ################################
   # Public API
   ################################
 
   @doc """
-  Starts a `GenBuffer` process linked to the current process.
+  Starts an `ExBuffer` process linked to the current process.
 
   ## Options
 
-  A GenBuffer can be started with the following options:
+  An ExBuffer can be started with the following options:
 
     * `:callback` - The function that will be invoked to handle a flush. This
       function should expect a single parameter: a list of items. (Required
       `function()`)
 
     * `:buffer_timeout` - The maximum time (in ms) allowed between flushes of
-      the GenBuffer. Once this amount of time has passed, the GenBuffer will be
+      the ExBuffer. Once this amount of time has passed, the ExBuffer will be
       flushed. (Optional `non_neg_integer()`, Default = `:infinity`)
 
-    * `:max_length` - The maximum allowed length (item count) of the GenBuffer.
-      Once the limit is hit, the GenBuffer will be flushed. (Optional
+    * `:max_length` - The maximum allowed length (item count) of the ExBuffer.
+      Once the limit is hit, the ExBuffer will be flushed. (Optional
       `non_neg_integer()`, Default = `:infinity`)
 
-    * `:max_size` - The maximum allowed size (in bytes) of the GenBuffer. Once
-      the limit is hit (or exceeded), the GenBuffer will be flushed. For more
-      information on how size is computed, see `GenBuffer.size/1`. (Optional
+    * `:max_size` - The maximum allowed size (in bytes) of the ExBuffer. Once
+      the limit is hit (or exceeded), the ExBuffer will be flushed. For more
+      information on how size is computed, see `ExBuffer.size/1`. (Optional
       `non_neg_integer()`, Default = `:infinity`)
 
-  Additionally, a GenBuffer can also be started with any `GenServer` options.
+  Additionally, an ExBuffer can also be started with any `GenServer` options.
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
-    {opts, server_opts} = Keyword.split(opts, @gen_buffer_fields)
+    {opts, server_opts} = Keyword.split(opts, @ex_buffer_fields)
     GenServer.start_link(__MODULE__, opts, server_opts)
   end
 
   @doc """
-  Lazily chunks an enumerable based on one or more GenBuffer flush conditions.
+  Lazily chunks an enumerable based on one or more ExBuffer flush conditions.
 
   This function currently supports length and size conditions. If multiple
   conditions are specified, a chunk is emitted once the **first** condition is
-  met (just like a GenBuffer process).
+  met (just like an ExBuffer process).
 
   While this function is useful in it's own right, it's included primarily as
-  another way to synchronously test applications that use GenBuffer.
+  another way to synchronously test applications that use ExBuffer.
 
   ## Options
 
@@ -88,7 +88,7 @@ defmodule GenBuffer do
       enum = ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
 
       enum
-      |> GenBuffer.chunk_enum!(max_length: 3, max_size: 10)
+      |> ExBuffer.chunk_enum!(max_length: 3, max_size: 10)
       |> Enum.into([])
       #=> [["foo", "bar", "baz"], ["foobar", "barbaz"], ["foobarbaz"]]
   """
@@ -104,7 +104,7 @@ defmodule GenBuffer do
   end
 
   @doc """
-  Dumps the contents of the given `GenBuffer` to a list, bypassing a flush
+  Dumps the contents of the given `ExBuffer` to a list, bypassing a flush
   callback and resetting the buffer.
 
   While this behavior may occasionally be desriable in a production environment,
@@ -112,20 +112,20 @@ defmodule GenBuffer do
 
   ## Example
 
-      GenBuffer.insert(:test_buffer, "foo")
-      GenBuffer.insert(:test_buffer, "bar")
+      ExBuffer.insert(:test_buffer, "foo")
+      ExBuffer.insert(:test_buffer, "bar")
 
-      GenBuffer.dump(:test_buffer)
+      ExBuffer.dump(:test_buffer)
       #=> ["foo", "bar"]
 
-      GenBuffer.length(:test_buffer)
+      ExBuffer.length(:test_buffer)
       #=> 0
   """
   @spec dump(t()) :: list()
   def dump(buffer), do: GenServer.call(buffer, :dump)
 
   @doc """
-  Flushes the given `GenBuffer`, regardless of whether or not the flush conditions
+  Flushes the given `ExBuffer`, regardless of whether or not the flush conditions
   have been met.
 
   While this behavior may occasionally be desriable in a production environment,
@@ -133,21 +133,21 @@ defmodule GenBuffer do
 
   ## Options
 
-  A GenBuffer can be manually flushed with the following options:
+  An ExBuffer can be manually flushed with the following options:
 
     * `:async` - Determines whether or not the flush will be asynchronous. (Optional
       `boolean()`, Default = `true`)
 
   ## Example
 
-      GenBuffer.insert(:test_buffer, "foo")
-      GenBuffer.insert(:test_buffer, "bar")
+      ExBuffer.insert(:test_buffer, "foo")
+      ExBuffer.insert(:test_buffer, "bar")
 
       # Assuming the flush callback is `IO.inspect/1`
-      GenBuffer.flush(:test_buffer)
+      ExBuffer.flush(:test_buffer)
       #=> outputs ["foo", "bar"]
 
-      GenBuffer.length(:test_buffer)
+      ExBuffer.length(:test_buffer)
       #=> 0
   """
   @spec flush(t(), keyword()) :: :ok
@@ -160,38 +160,38 @@ defmodule GenBuffer do
   end
 
   @doc """
-  Inserts the given item into the given `GenBuffer`.
+  Inserts the given item into the given `ExBuffer`.
 
   ## Example
 
-      GenBuffer.insert(:test_buffer, "foo")
+      ExBuffer.insert(:test_buffer, "foo")
       #=> :test_buffer items = ["foo"]
 
-      GenBuffer.insert(:test_buffer, "bar")
+      ExBuffer.insert(:test_buffer, "bar")
       #=> :test_buffer items = ["foo", "bar"]
   """
   @spec insert(t(), term()) :: :ok
   def insert(buffer, item), do: GenServer.call(buffer, {:insert, item})
 
   @doc """
-  Returns the length (item count) of the given `GenBuffer`.
+  Returns the length (item count) of the given `ExBuffer`.
 
   While this behavior may occasionally be desriable in a production environment,
   it is intended to be used primarily for testing and debugging.
 
   ## Example
 
-      GenBuffer.insert(:test_buffer, "foo")
-      GenBuffer.insert(:test_buffer, "bar")
+      ExBuffer.insert(:test_buffer, "foo")
+      ExBuffer.insert(:test_buffer, "bar")
 
-      GenBuffer.length(:test_buffer)
+      ExBuffer.length(:test_buffer)
       #=> 2
   """
   @spec length(t()) :: non_neg_integer()
   def length(buffer), do: GenServer.call(buffer, :length)
 
   @doc """
-  Retuns the size (in bytes) of the given `GenBuffer`.
+  Retuns the size (in bytes) of the given `ExBuffer`.
 
   Item size is computed using `Kernel.byte_size/1`. Because this function requires
   a bitstring input, non-bitstring items are first transformed into binary using
@@ -202,10 +202,10 @@ defmodule GenBuffer do
 
   ## Example
 
-      GenBuffer.insert(:test_buffer, "foo")
-      GenBuffer.insert(:test_buffer, "bar")
+      ExBuffer.insert(:test_buffer, "foo")
+      ExBuffer.insert(:test_buffer, "bar")
 
-      GenBuffer.size(:test_buffer)
+      ExBuffer.size(:test_buffer)
       #=> 6
   """
   @spec size(t()) :: non_neg_integer()
