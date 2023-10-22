@@ -16,7 +16,14 @@ defmodule ExBuffer do
 
   @type t :: GenServer.name() | pid()
 
-  @ex_buffer_fields [:callback, :buffer_timeout, :max_length, :max_size, :flush_meta]
+  @ex_buffer_fields [
+    :buffer_timeout,
+    :flush_callback,
+    :flush_meta,
+    :max_length,
+    :max_size,
+    :size_callback
+  ]
 
   ################################
   # Public API
@@ -291,7 +298,7 @@ defmodule ExBuffer do
   ################################
 
   defp init_state(opts) do
-    case Keyword.get(opts, :callback) do
+    case Keyword.get(opts, :flush_callback) do
       nil -> {:error, :invalid_callback}
       _ -> State.new(opts)
     end
@@ -325,6 +332,6 @@ defmodule ExBuffer do
 
     state
     |> State.items()
-    |> state.callback.(opts)
+    |> state.flush_callback.(opts)
   end
 end

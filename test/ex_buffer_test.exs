@@ -9,11 +9,11 @@ defmodule ExBufferTest do
     case test_type do
       :test ->
         destination = self()
-        callback = fn data, opts -> send(destination, {:data, data, opts}) end
-        %{buffer: :buffer, opts: [name: :buffer, callback: callback]}
+        flush_callback = fn data, opts -> send(destination, {:data, data, opts}) end
+        %{buffer: :buffer, opts: [name: :buffer, flush_callback: flush_callback]}
 
       :doctest ->
-        opts = [callback: fn _, _ -> :ok end, name: :buffer, buffer_timeout: 5_000]
+        opts = [flush_callback: fn _, _ -> :ok end, name: :buffer, buffer_timeout: 5_000]
         start_supervised!({ExBuffer, opts})
         :ok
     end
@@ -25,13 +25,13 @@ defmodule ExBufferTest do
     end
 
     test "will not start an ExBuffer without a callback", ctx do
-      opts = Keyword.delete(ctx.opts, :callback)
+      opts = Keyword.delete(ctx.opts, :flush_callback)
 
       assert {:error, {:invalid_callback, _}} = start_supervised({ExBuffer, opts})
     end
 
     test "will not start an ExBuffer with an invalid callback", ctx do
-      opts = Keyword.put(ctx.opts, :callback, fn x, y, z -> x + y + z end)
+      opts = Keyword.put(ctx.opts, :flush_callback, fn x, y, z -> x + y + z end)
 
       assert {:error, {:invalid_callback, _}} = start_supervised({ExBuffer, opts})
       refute_receive {:data, _, _}
@@ -61,6 +61,13 @@ defmodule ExBufferTest do
       enum = ExBuffer.chunk!(enum, max_length: 3, max_size: 10)
 
       assert Enum.into(enum, []) == [["foo", "bar", "baz"], ["foobar", "barbaz"], ["foobarbaz"]]
+    end
+
+    test "will correctly chunk an enumerable with a size callback" do
+      enum = ["foo", "bar", "baz"]
+      enum = ExBuffer.chunk!(enum, max_size: 8, size_callback: &(byte_size(&1) + 1))
+
+      assert Enum.into(enum, []) == [["foo", "bar"], ["baz"]]
     end
 
     test "will raise an error with an invalid limit" do
@@ -135,6 +142,16 @@ defmodule ExBufferTest do
       assert_receive {:data, ["foo", "bar", "baz"], _}
     end
 
+    test "will flush an ExBuffer with a size callback", ctx do
+      opts = Keyword.merge(ctx.opts, max_size: 12, size_callback: &(byte_size(&1) + 1))
+      start_supervised!({ExBuffer, opts})
+
+      assert ExBuffer.insert(ctx.buffer, "foo") == :ok
+      assert ExBuffer.insert(ctx.buffer, "bar") == :ok
+      assert ExBuffer.insert(ctx.buffer, "baz") == :ok
+      assert_receive {:data, ["foo", "bar", "baz"], _}
+    end
+
     test "will flush an ExBuffer after exceeding timeout", ctx do
       opts = Keyword.put(ctx.opts, :buffer_timeout, 100)
       start_supervised!({ExBuffer, opts})
@@ -195,13 +212,22 @@ defmodule ExBufferTest do
 
   describe "size/1" do
     test "will return the size of an ExBuffer", ctx do
-      opts = Keyword.put(ctx.opts, :max_size, 10)
-      start_supervised!({ExBuffer, opts})
+      start_supervised!({ExBuffer, ctx.opts})
 
       assert ExBuffer.insert(ctx.buffer, "foo") == :ok
       assert ExBuffer.insert(ctx.buffer, "bar") == :ok
       assert ExBuffer.insert(ctx.buffer, "baz") == :ok
       assert ExBuffer.size(ctx.buffer) == 9
+    end
+
+    test "will return the size of an ExBuffer with a size callback", ctx do
+      opts = Keyword.merge(ctx.opts, size_callback: &(byte_size(&1) + 1))
+      start_supervised!({ExBuffer, opts})
+
+      assert ExBuffer.insert(ctx.buffer, "foo") == :ok
+      assert ExBuffer.insert(ctx.buffer, "bar") == :ok
+      assert ExBuffer.insert(ctx.buffer, "baz") == :ok
+      assert ExBuffer.size(ctx.buffer) == 12
     end
   end
 end

@@ -3,6 +3,8 @@ defmodule ExBuffer.Mock do
 
   alias ExBuffer.State
 
+  @chunk_opts [:max_length, :max_size, :size_callback]
+
   ################################
   # Public API
   ################################
@@ -10,7 +12,10 @@ defmodule ExBuffer.Mock do
   @doc false
   @spec chunk!(Enumerable.t(), keyword()) :: Enumerable.t()
   def chunk!(enum, opts \\ []) do
-    case State.new(opts) do
+    opts
+    |> Keyword.take(@chunk_opts)
+    |> State.new()
+    |> case do
       {:ok, state} -> Stream.chunk_while(enum, state, &do_insert(&2, &1), &buffer_end/1)
       {:error, reason} -> raise(ArgumentError, to_message(reason))
     end
