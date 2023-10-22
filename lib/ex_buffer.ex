@@ -85,12 +85,12 @@ defmodule ExBuffer do
 
   ## Example
 
-      enumerable = ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
-
-      enumerable
-      |> ExBuffer.chunk!(max_length: 3, max_size: 10)
-      |> Enum.into([])
-      #=> [["foo", "bar", "baz"], ["foobar", "barbaz"], ["foobarbaz"]]
+      iex> enumerable = ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
+      ...>
+      ...> enumerable
+      ...> |> ExBuffer.chunk!(max_length: 3, max_size: 10)
+      ...> |> Enum.into([])
+      [["foo", "bar", "baz"], ["foobar", "barbaz"], ["foobarbaz"]]
   """
   @spec chunk!(Enumerable.t(), keyword()) :: Enumerable.t()
   defdelegate chunk!(enumerable, opts \\ []), to: Mock
@@ -104,14 +104,11 @@ defmodule ExBuffer do
 
   ## Example
 
-      ExBuffer.insert(:buffer, "foo")
-      ExBuffer.insert(:buffer, "bar")
-
-      ExBuffer.dump(:buffer)
-      #=> ["foo", "bar"]
-
-      ExBuffer.length(:buffer)
-      #=> 0
+      iex> ExBuffer.insert(:buffer, "foo")
+      ...> ExBuffer.insert(:buffer, "bar")
+      ...>
+      ...> ExBuffer.dump(:buffer)
+      ["foo", "bar"]
   """
   @spec dump(t()) :: list()
   def dump(buffer), do: GenServer.call(buffer, :dump)
@@ -132,15 +129,12 @@ defmodule ExBuffer do
 
   ## Example
 
-      ExBuffer.insert(:buffer, "foo")
-      ExBuffer.insert(:buffer, "bar")
-
-      # Assuming the flush callback is `IO.inspect/1`
-      ExBuffer.flush(:buffer)
-      #=> outputs ["foo", "bar"]
-
-      ExBuffer.length(:buffer)
-      #=> 0
+      iex> ExBuffer.insert(:buffer, "foo")
+      ...> ExBuffer.insert(:buffer, "bar")
+      ...>
+      ...> # Invokes callback on ["foo", "bar"]
+      ...> ExBuffer.flush(:buffer)
+      :ok
   """
   @spec flush(t(), keyword()) :: :ok
   def flush(buffer, opts \\ []) do
@@ -156,11 +150,8 @@ defmodule ExBuffer do
 
   ## Example
 
-      ExBuffer.insert(:buffer, "foo")
-      #=> :buffer items = ["foo"]
-
-      ExBuffer.insert(:buffer, "bar")
-      #=> :buffer items = ["foo", "bar"]
+      iex> ExBuffer.insert(:buffer, "foo")
+      :ok
   """
   @spec insert(t(), term()) :: :ok
   def insert(buffer, item), do: GenServer.call(buffer, {:insert, item})
@@ -173,11 +164,11 @@ defmodule ExBuffer do
 
   ## Example
 
-      ExBuffer.insert(:buffer, "foo")
-      ExBuffer.insert(:buffer, "bar")
-
-      ExBuffer.length(:buffer)
-      #=> 2
+      iex> ExBuffer.insert(:buffer, "foo")
+      ...> ExBuffer.insert(:buffer, "bar")
+      ...>
+      ...> ExBuffer.length(:buffer)
+      2
   """
   @spec length(t()) :: non_neg_integer()
   def length(buffer), do: GenServer.call(buffer, :length)
@@ -194,11 +185,11 @@ defmodule ExBuffer do
 
   ## Example
 
-      ExBuffer.insert(:buffer, "foo")
-      ExBuffer.insert(:buffer, "bar")
-
-      ExBuffer.size(:buffer)
-      #=> 6
+      iex> ExBuffer.insert(:buffer, "foo")
+      ...> ExBuffer.insert(:buffer, "bar")
+      ...>
+      ...> ExBuffer.size(:buffer)
+      6
   """
   @spec size(t()) :: non_neg_integer()
   def size(buffer), do: GenServer.call(buffer, :size)

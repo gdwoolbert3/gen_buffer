@@ -1,11 +1,22 @@
 defmodule ExBufferTest do
   use ExUnit.Case, async: true
+  doctest ExBuffer
 
-  setup do
-    buffer = :test_buffer
-    destination = self()
-    callback = fn data -> send(destination, {:data, data}) end
-    %{buffer: buffer, opts: [name: buffer, callback: callback]}
+  setup %{test_type: test_type} do
+    # This `setup` callback is responsible for both tests and doctests.
+    # Normal tests expect a map with a buffer name and default opts.
+    # Doctests only expect a running ExBuffer named `:buffer`.
+    case test_type do
+      :test ->
+        destination = self()
+        callback = fn data -> send(destination, {:data, data}) end
+        %{buffer: :buffer, opts: [name: :buffer, callback: callback]}
+
+      :doctest ->
+        opts = [callback: fn _ -> :ok end, name: :buffer, buffer_timeout: 5_000]
+        start_supervised!({ExBuffer, opts})
+        :ok
+    end
   end
 
   describe "start_link/1" do
