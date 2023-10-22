@@ -89,6 +89,7 @@ defmodule ExBuffer.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:benchee, "~> 1.1.0", only: :dev, runtime: false},
       {:ex_doc, "~> 0.30.8", only: :dev, runtime: false},
       {:credo, "~> 1.7.0", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4.1", only: [:dev, :test], runtime: false},
