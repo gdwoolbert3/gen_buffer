@@ -86,8 +86,8 @@ defmodule ExBuffer do
   ## Example
 
       iex> enumerable = ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
-      ...>
-      ...> enumerable
+      iex>
+      iex> enumerable
       ...> |> ExBuffer.chunk!(max_length: 3, max_size: 10)
       ...> |> Enum.into([])
       [["foo", "bar", "baz"], ["foobar", "barbaz"], ["foobarbaz"]]
@@ -99,15 +99,15 @@ defmodule ExBuffer do
   Dumps the contents of the given `ExBuffer` to a list, bypassing a flush
   callback and resetting the buffer.
 
-  While this behavior may occasionally be desriable in a production environment,
+  While this functionality may occasionally be desriable in a production environment,
   it is intended to be used primarily for testing and debugging.
 
   ## Example
 
       iex> ExBuffer.insert(:buffer, "foo")
-      ...> ExBuffer.insert(:buffer, "bar")
-      ...>
-      ...> ExBuffer.dump(:buffer)
+      iex> ExBuffer.insert(:buffer, "bar")
+      iex>
+      iex> ExBuffer.dump(:buffer)
       ["foo", "bar"]
   """
   @spec dump(t()) :: list()
@@ -117,7 +117,7 @@ defmodule ExBuffer do
   Flushes the given `ExBuffer`, regardless of whether or not the flush conditions
   have been met.
 
-  While this behavior may occasionally be desriable in a production environment,
+  While this functionality may occasionally be desriable in a production environment,
   it is intended to be used primarily for testing and debugging.
 
   ## Options
@@ -130,10 +130,10 @@ defmodule ExBuffer do
   ## Example
 
       iex> ExBuffer.insert(:buffer, "foo")
-      ...> ExBuffer.insert(:buffer, "bar")
-      ...>
-      ...> # Invokes callback on ["foo", "bar"]
-      ...> ExBuffer.flush(:buffer)
+      iex> ExBuffer.insert(:buffer, "bar")
+      iex>
+      iex> # Invokes callback on ["foo", "bar"]
+      iex> ExBuffer.flush(:buffer)
       :ok
   """
   @spec flush(t(), keyword()) :: :ok
@@ -159,19 +159,38 @@ defmodule ExBuffer do
   @doc """
   Returns the length (item count) of the given `ExBuffer`.
 
-  While this behavior may occasionally be desriable in a production environment,
+  While this functionality may occasionally be desriable in a production environment,
   it is intended to be used primarily for testing and debugging.
 
   ## Example
 
       iex> ExBuffer.insert(:buffer, "foo")
-      ...> ExBuffer.insert(:buffer, "bar")
-      ...>
-      ...> ExBuffer.length(:buffer)
+      iex> ExBuffer.insert(:buffer, "bar")
+      iex>
+      iex> ExBuffer.length(:buffer)
       2
   """
   @spec length(t()) :: non_neg_integer()
   def length(buffer), do: GenServer.call(buffer, :length)
+
+  @doc """
+  Returns the time (in ms) before the next scheduled flush.
+
+  If the given ExBuffer does not have a timeout, this function returns `nil`.
+
+  While this functionality may occasionally be desriable in a production environment,
+  it is intended to be used primarily for testing and debugging.
+
+  ## Example
+
+      iex> next_flush = ExBuffer.next_flush(:buffer)
+      iex>
+      iex> # :buffer has a timeout, so next_flush is an integer
+      iex> is_integer(next_flush)
+      true
+  """
+  @spec next_flush(t()) :: non_neg_integer() | nil
+  def next_flush(buffer), do: GenServer.call(buffer, :next_flush)
 
   @doc """
   Retuns the size (in bytes) of the given `ExBuffer`.
@@ -180,15 +199,15 @@ defmodule ExBuffer do
   a bitstring input, non-bitstring items are first transformed into binary using
   `:erlang.term_to_binary/1`.
 
-  While this behavior may occasionally be desriable in a production environment,
+  While this functionality may occasionally be desriable in a production environment,
   it is intended to be used primarily for testing and debugging.
 
   ## Example
 
       iex> ExBuffer.insert(:buffer, "foo")
-      ...> ExBuffer.insert(:buffer, "bar")
-      ...>
-      ...> ExBuffer.size(:buffer)
+      iex> ExBuffer.insert(:buffer, "bar")
+      iex>
+      iex> ExBuffer.size(:buffer)
       6
   """
   @spec size(t()) :: non_neg_integer()
@@ -234,6 +253,7 @@ defmodule ExBuffer do
   end
 
   def handle_call(:length, _from, state), do: {:reply, state.length, state}
+  def handle_call(:next_flush, _from, state), do: {:reply, get_next_flush(state), state}
   def handle_call(:size, _from, state), do: {:reply, state.size, state}
 
   @doc false
@@ -298,6 +318,12 @@ defmodule ExBuffer do
     # We use `:erlang.start_timer/3` to include the timer ref in the message. This is necessary
     # for handling race conditions resulting from multiple simultaneous flush conditions.
     :erlang.start_timer(state.timeout, self(), :flush)
+  end
+
+  defp get_next_flush(%State{timer: nil}), do: nil
+
+  defp get_next_flush(state) do
+    with false <- Process.read_timer(state.timer), do: nil
   end
 
   defp do_flush(state) do

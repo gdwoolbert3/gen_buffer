@@ -167,6 +167,22 @@ defmodule ExBufferTest do
     end
   end
 
+  describe "next_flush/1" do
+    test "will return the time before the next flush", ctx do
+      opts = Keyword.put(ctx.opts, :buffer_timeout, 1_000)
+      start_supervised!({ExBuffer, opts})
+      :timer.sleep(100)
+
+      assert ExBuffer.next_flush(ctx.buffer) < 1_000
+    end
+
+    test "will return nil when buffer has no timeout", ctx do
+      start_supervised!({ExBuffer, ctx.opts})
+
+      assert is_nil(ExBuffer.next_flush(ctx.buffer))
+    end
+  end
+
   describe "size/1" do
     test "will return the size of an ExBuffer", ctx do
       opts = Keyword.put(ctx.opts, :max_size, 10)
