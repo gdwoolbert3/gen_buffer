@@ -10,7 +10,7 @@ defmodule ExBuffer.Mock do
   @doc false
   @spec chunk!(Enumerable.t(), keyword()) :: Enumerable.t()
   def chunk!(enum, opts \\ []) do
-    case init_state(opts) do
+    case State.new(opts) do
       {:ok, state} -> Stream.chunk_while(enum, state, &do_insert(&2, &1), &buffer_end/1)
       {:error, reason} -> raise(ArgumentError, to_message(reason))
     end
@@ -19,12 +19,6 @@ defmodule ExBuffer.Mock do
   ################################
   # Private API
   ################################
-
-  defp init_state(opts) do
-    max_length = Keyword.get(opts, :max_length, :infinity)
-    max_size = Keyword.get(opts, :max_size, :infinity)
-    State.new(nil, max_length, max_size, :infinity)
-  end
 
   defp do_insert(state, item) do
     with {:flush, state} <- State.insert(state, item) do

@@ -9,11 +9,11 @@ defmodule ExBufferTest do
     case test_type do
       :test ->
         destination = self()
-        callback = fn data -> send(destination, {:data, data}) end
+        callback = fn data, opts -> send(destination, {:data, data, opts}) end
         %{buffer: :buffer, opts: [name: :buffer, callback: callback]}
 
       :doctest ->
-        opts = [callback: fn _ -> :ok end, name: :buffer, buffer_timeout: 5_000]
+        opts = [callback: fn _, _ -> :ok end, name: :buffer, buffer_timeout: 5_000]
         start_supervised!({ExBuffer, opts})
         :ok
     end
@@ -34,14 +34,14 @@ defmodule ExBufferTest do
       opts = Keyword.put(ctx.opts, :callback, fn x, y, z -> x + y + z end)
 
       assert {:error, {:invalid_callback, _}} = start_supervised({ExBuffer, opts})
-      refute_receive {:data, _}
+      refute_receive {:data, _, _}
     end
 
     test "will not start an ExBuffer with an invalid limit", ctx do
       opts = Keyword.put(ctx.opts, :max_length, -5)
 
       assert {:error, {:invalid_limit, _}} = start_supervised({ExBuffer, opts})
-      refute_receive {:data, _}
+      refute_receive {:data, _, _}
     end
 
     test "will flush an ExBuffer on termination", ctx do
@@ -51,7 +51,7 @@ defmodule ExBufferTest do
       assert ExBuffer.insert(ctx.buffer, "bar") == :ok
       assert ExBuffer.insert(ctx.buffer, "baz") == :ok
       assert GenServer.stop(ctx.buffer) == :ok
-      assert_receive {:data, ["foo", "bar", "baz"]}
+      assert_receive {:data, ["foo", "bar", "baz"], _}
     end
   end
 
@@ -91,7 +91,7 @@ defmodule ExBufferTest do
       assert ExBuffer.insert(ctx.buffer, "bar") == :ok
       assert ExBuffer.insert(ctx.buffer, "baz") == :ok
       assert ExBuffer.flush(ctx.buffer) == :ok
-      assert_receive {:data, ["foo", "bar", "baz"]}
+      assert_receive {:data, ["foo", "bar", "baz"], _}
     end
 
     test "will synchronously flush an ExBuffer", ctx do
@@ -101,7 +101,7 @@ defmodule ExBufferTest do
       assert ExBuffer.insert(ctx.buffer, "bar") == :ok
       assert ExBuffer.insert(ctx.buffer, "baz") == :ok
       assert ExBuffer.flush(ctx.buffer, async: false) == :ok
-      assert_receive {:data, ["foo", "bar", "baz"]}
+      assert_receive {:data, ["foo", "bar", "baz"], _}
     end
   end
 
@@ -122,7 +122,7 @@ defmodule ExBufferTest do
       assert ExBuffer.insert(ctx.buffer, "foo") == :ok
       assert ExBuffer.insert(ctx.buffer, "bar") == :ok
       assert ExBuffer.insert(ctx.buffer, "baz") == :ok
-      assert_receive {:data, ["foo", "bar", "baz"]}
+      assert_receive {:data, ["foo", "bar", "baz"], _}
     end
 
     test "will flush an ExBuffer after hitting max size", ctx do
@@ -132,7 +132,7 @@ defmodule ExBufferTest do
       assert ExBuffer.insert(ctx.buffer, "foo") == :ok
       assert ExBuffer.insert(ctx.buffer, "bar") == :ok
       assert ExBuffer.insert(ctx.buffer, "baz") == :ok
-      assert_receive {:data, ["foo", "bar", "baz"]}
+      assert_receive {:data, ["foo", "bar", "baz"], _}
     end
 
     test "will flush an ExBuffer after exceeding timeout", ctx do
@@ -142,7 +142,7 @@ defmodule ExBufferTest do
       assert ExBuffer.insert(ctx.buffer, "foo") == :ok
       assert ExBuffer.insert(ctx.buffer, "bar") == :ok
       assert ExBuffer.insert(ctx.buffer, "baz") == :ok
-      assert_receive {:data, ["foo", "bar", "baz"]}, 150
+      assert_receive {:data, ["foo", "bar", "baz"], _}, 150
     end
 
     test "will flush an ExBuffer when first condition is met", ctx do
@@ -152,7 +152,17 @@ defmodule ExBufferTest do
       assert ExBuffer.insert(ctx.buffer, "foo") == :ok
       assert ExBuffer.insert(ctx.buffer, "bar") == :ok
       assert ExBuffer.insert(ctx.buffer, "baz") == :ok
-      assert_receive {:data, ["foo", "bar", "baz"]}
+      assert_receive {:data, ["foo", "bar", "baz"], _}
+    end
+
+    test "will include flush meta when an ExBuffer is flushed", ctx do
+      opts = Keyword.merge(ctx.opts, max_length: 3, flush_meta: "meta")
+      start_supervised!({ExBuffer, opts})
+
+      assert ExBuffer.insert(ctx.buffer, "foo") == :ok
+      assert ExBuffer.insert(ctx.buffer, "bar") == :ok
+      assert ExBuffer.insert(ctx.buffer, "baz") == :ok
+      assert_receive {:data, ["foo", "bar", "baz"], [length: 3, meta: "meta", size: 9]}
     end
   end
 
