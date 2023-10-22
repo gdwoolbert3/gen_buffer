@@ -91,6 +91,9 @@ defmodule ExBuffer do
       ...> |> ExBuffer.chunk!(max_length: 3, max_size: 10)
       ...> |> Enum.into([])
       [["foo", "bar", "baz"], ["foobar", "barbaz"], ["foobarbaz"]]
+
+      iex> ExBuffer.chunk!(["foo", "bar", "baz"], max_length: -5)
+      ** (ArgumentError) invalid limit
   """
   @spec chunk!(Enumerable.t(), keyword()) :: Enumerable.t()
   defdelegate chunk!(enumerable, opts \\ []), to: Mock
@@ -185,7 +188,7 @@ defmodule ExBuffer do
 
       iex> next_flush = ExBuffer.next_flush(:buffer)
       iex>
-      iex> # :buffer has a timeout, so next_flush is an integer
+      iex> # Assuming :buffer has a timeout...
       iex> is_integer(next_flush)
       true
   """
