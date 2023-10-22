@@ -98,7 +98,7 @@ defmodule ExBuffer do
 
   > #### Warning {: .warning}
   >
-  > Not including either of the options above is permitted but will result in a
+  > Including neither `:max_length` nor `:max_size` is permitted but will result in a
   > single chunk being emitted. One can achieve a similar result in a more performant
   > way using `Stream.into/2`. In that same vein, including only a `:max_length`
   > condition makes this function a less performant version of `Stream.chunk_every/2`.
@@ -107,16 +107,12 @@ defmodule ExBuffer do
 
   ## Example
 
-      iex> enumerable = ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
-      iex>
-      iex> enumerable
+      iex> ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
       ...> |> ExBuffer.chunk!(max_length: 3, max_size: 10)
       ...> |> Enum.into([])
       [["foo", "bar", "baz"], ["foobar", "barbaz"], ["foobarbaz"]]
 
-      iex> enumerable = ["foo", "bar", "baz"]
-      iex>
-      iex> enumerable
+      iex> ["foo", "bar", "baz"]
       ...> |> ExBuffer.chunk!(max_size: 8, size_callback: &(byte_size(&1) + 1))
       ...> |> Enum.into([])
       [["foo", "bar"], ["baz"]]
@@ -138,7 +134,6 @@ defmodule ExBuffer do
 
       iex> ExBuffer.insert(:buffer, "foo")
       iex> ExBuffer.insert(:buffer, "bar")
-      iex>
       iex> ExBuffer.dump(:buffer)
       ["foo", "bar"]
   """
@@ -163,8 +158,8 @@ defmodule ExBuffer do
 
       iex> ExBuffer.insert(:buffer, "foo")
       iex> ExBuffer.insert(:buffer, "bar")
-      iex>
-      iex> # Invokes callback on ["foo", "bar"]
+      ...>
+      ...> # Invokes callback on ["foo", "bar"]
       iex> ExBuffer.flush(:buffer)
       :ok
   """
@@ -198,7 +193,6 @@ defmodule ExBuffer do
 
       iex> ExBuffer.insert(:buffer, "foo")
       iex> ExBuffer.insert(:buffer, "bar")
-      iex>
       iex> ExBuffer.length(:buffer)
       2
   """
@@ -216,8 +210,8 @@ defmodule ExBuffer do
   ## Example
 
       iex> next_flush = ExBuffer.next_flush(:buffer)
-      iex>
-      iex> # Assuming :buffer has a timeout...
+      ...>
+      ...> # Assuming :buffer has a timeout...
       iex> is_integer(next_flush)
       true
   """
@@ -227,7 +221,7 @@ defmodule ExBuffer do
   @doc """
   Retuns the size (in bytes) of the given `ExBuffer`.
 
-  For more information on how item size is compued, see `ExBuffer.start_link/1`.
+  For more information on how item size is computed, see `ExBuffer.start_link/1`.
 
   While this functionality may occasionally be desriable in a production environment,
   it is intended to be used primarily for testing and debugging.
@@ -236,7 +230,6 @@ defmodule ExBuffer do
 
       iex> ExBuffer.insert(:buffer, "foo")
       iex> ExBuffer.insert(:buffer, "bar")
-      iex>
       iex> ExBuffer.size(:buffer)
       6
   """
