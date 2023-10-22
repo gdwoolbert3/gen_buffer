@@ -12,7 +12,7 @@ defmodule ExBuffer do
 
   use GenServer
 
-  alias ExBuffer.{Mock, State}
+  alias ExBuffer.{State, Utils}
 
   @type t :: GenServer.name() | pid()
 
@@ -121,7 +121,7 @@ defmodule ExBuffer do
       ** (ArgumentError) invalid limit
   """
   @spec chunk!(Enumerable.t(), keyword()) :: Enumerable.t()
-  defdelegate chunk!(enumerable, opts \\ []), to: Mock
+  defdelegate chunk!(enumerable, opts \\ []), to: Utils
 
   @doc """
   Dumps the contents of the given `ExBuffer` to a list, bypassing a flush

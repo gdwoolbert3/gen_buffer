@@ -1,4 +1,4 @@
-defmodule ExBuffer.Mock do
+defmodule ExBuffer.Utils do
   @moduledoc false
 
   alias ExBuffer.State
