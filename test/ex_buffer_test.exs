@@ -13,6 +13,12 @@ defmodule ExBufferTest do
       start_supervised!({ExBuffer, ctx.opts})
     end
 
+    test "will not start an ExBuffer without a callback", ctx do
+      opts = Keyword.delete(ctx.opts, :callback)
+
+      assert {:error, {:invalid_callback, _}} = start_supervised({ExBuffer, opts})
+    end
+
     test "will not start an ExBuffer with an invalid callback", ctx do
       opts = Keyword.put(ctx.opts, :callback, fn x, y, z -> x + y + z end)
 
@@ -38,18 +44,18 @@ defmodule ExBufferTest do
     end
   end
 
-  describe "chunk_enum!/2" do
+  describe "chunk!/2" do
     test "will correctly chunk an enumerable" do
       enum = ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
-      enum = ExBuffer.chunk_enum!(enum, max_length: 3, max_size: 10)
+      enum = ExBuffer.chunk!(enum, max_length: 3, max_size: 10)
 
       assert Enum.into(enum, []) == [["foo", "bar", "baz"], ["foobar", "barbaz"], ["foobarbaz"]]
     end
 
     test "will raise an error with an invalid limit" do
-      chunk_enum = fn -> ExBuffer.chunk_enum!(["foo", "bar", "baz"], max_length: -5) end
+      fun = fn -> ExBuffer.chunk!(["foo", "bar", "baz"], max_length: -5) end
 
-      assert_raise ArgumentError, "invalid limit", chunk_enum
+      assert_raise ArgumentError, "invalid limit", fun
     end
   end
 
@@ -154,15 +160,6 @@ defmodule ExBufferTest do
     test "will return the size of an ExBuffer", ctx do
       opts = Keyword.put(ctx.opts, :max_size, 10)
       start_supervised!({ExBuffer, opts})
-
-      assert ExBuffer.insert(ctx.buffer, "foo") == :ok
-      assert ExBuffer.insert(ctx.buffer, "bar") == :ok
-      assert ExBuffer.insert(ctx.buffer, "baz") == :ok
-      assert ExBuffer.size(ctx.buffer) == 9
-    end
-
-    test "will return the size of an ExBuffer without a max size", ctx do
-      start_supervised!({ExBuffer, ctx.opts})
 
       assert ExBuffer.insert(ctx.buffer, "foo") == :ok
       assert ExBuffer.insert(ctx.buffer, "bar") == :ok
