@@ -28,9 +28,10 @@ defmodule ExBufferTest do
       opts = Keyword.delete(ctx.opts, :flush_callback)
 
       assert {:error, {:invalid_callback, _}} = start_supervised({ExBuffer, opts})
+      refute_receive {:data, _, _}
     end
 
-    test "will not start an ExBuffer with an invalid callback", ctx do
+    test "will not start an ExBuffer with an invalid flush callback", ctx do
       opts = Keyword.put(ctx.opts, :flush_callback, fn x, y, z -> x + y + z end)
 
       assert {:error, {:invalid_callback, _}} = start_supervised({ExBuffer, opts})
@@ -41,6 +42,13 @@ defmodule ExBufferTest do
       opts = Keyword.put(ctx.opts, :max_length, -5)
 
       assert {:error, {:invalid_limit, _}} = start_supervised({ExBuffer, opts})
+      refute_receive {:data, _, _}
+    end
+
+    test "will not start an ExBuffer with an invalid size callback", ctx do
+      opts = Keyword.put(ctx.opts, :size_callback, nil)
+
+      assert {:error, {:invalid_callback, _}} = start_supervised({ExBuffer, opts})
       refute_receive {:data, _, _}
     end
 

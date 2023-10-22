@@ -36,22 +36,33 @@ defmodule ExBuffer do
 
   An ExBuffer can be started with the following options:
 
-    * `:callback` - The function that will be invoked to handle a flush. This
-      function should expect a single parameter: a list of items. (Required
-      `function()`)
+    * `:flush_callback` - The function that will be invoked to handle a flush.
+      This function should expect two parameters: a list of items and a keyword
+      list of flush opts. (Required)
 
-    * `:buffer_timeout` - The maximum time (in ms) allowed between flushes of
-      the ExBuffer. Once this amount of time has passed, the ExBuffer will be
-      flushed. (Optional `non_neg_integer()`, Default = `:infinity`)
+    * `:buffer_timeout` - A non-negative integer representing the maximum time
+      (in ms) allowed between flushes of the ExBuffer. Once this amount of time
+      has passed, the ExBuffer will be flushed. By default, an ExBuffer does not
+      have a timeout. (Optional)
 
-    * `:max_length` - The maximum allowed length (item count) of the ExBuffer.
-      Once the limit is hit, the ExBuffer will be flushed. (Optional
-      `non_neg_integer()`, Default = `:infinity`)
+    * `:flush_meta` - A term to be included in the flush opts under the `meta` key.
+      By default, this value will be `nil`. (Optional)
 
-    * `:max_size` - The maximum allowed size (in bytes) of the ExBuffer. Once
-      the limit is hit (or exceeded), the ExBuffer will be flushed. For more
-      information on how size is computed, see `ExBuffer.size/1`. (Optional
-      `non_neg_integer()`, Default = `:infinity`)
+    * `:max_length` - A non-negative integer representing the maximum allowed
+      length (item count) of the ExBuffer. Once the limit is hit, the ExBuffer will
+      be flushed. By default, an ExBuffer does not have a max length. (Optional)
+
+    * `:max_size` - A non-negative integer representing the maximum allowed size
+      (in bytes) of the ExBuffer. Once the limit is hit (or exceeded), the ExBuffer
+      will be flushed. The `:size_callback` option determines how item size is
+      computed. By default, an ExBuffer does not have a max size. (Optional)
+
+    * `:size_callback` - The function that will be invoked to deterime the size
+      of an item. This function should expect a single parameter representing an
+      item and should return a single non-negative integer representing that item's
+      byte size. By default, an ExBuffer's size callback is `Kernel.byte_size/1`
+      (`:erlang.term_to_binary/1` is used to convert non-bitstring inputs to binary
+      if necessary). (Optional)
 
   Additionally, an ExBuffer can also be started with any `GenServer` options.
   """
@@ -75,11 +86,15 @@ defmodule ExBuffer do
 
   An enumerable can be chunked with the following options:
 
-    * `:max_length` - The maximum allowed length (item count) of a chunk.
-      (Optional `non_neg_integer()`, Default = `:infinity`)
+    * `:max_length` - A non-negative integer representing the maximum allowed
+      length (item count) of a chunk. By default, there is no max length. (Optional)
 
-    * `:max_size` - The maximum allowed size (in bytes) of a chunk. (Optional
-      `non_neg_integer()`, Default = `:infinity`)
+    * `:max_size` - A non-negative integer representing the maximum allowed size
+      (in bytes) of a chunk. The `:size_callback` option determines how item size
+      is computed. By default, there is no max size. (Optional)
+
+    * `:size_callback` - The function that will be invoked to deterime the size
+      of an item. For more information, see `ExBuffer.start_link/1`. (Optional)
 
   > #### Warning {: .warning}
   >
@@ -98,6 +113,13 @@ defmodule ExBuffer do
       ...> |> ExBuffer.chunk!(max_length: 3, max_size: 10)
       ...> |> Enum.into([])
       [["foo", "bar", "baz"], ["foobar", "barbaz"], ["foobarbaz"]]
+
+      iex> enumerable = ["foo", "bar", "baz"]
+      iex>
+      iex> enumerable
+      ...> |> ExBuffer.chunk!(max_size: 8, size_callback: &(byte_size(&1) + 1))
+      ...> |> Enum.into([])
+      [["foo", "bar"], ["baz"]]
 
       iex> ExBuffer.chunk!(["foo", "bar", "baz"], max_length: -5)
       ** (ArgumentError) invalid limit
@@ -134,8 +156,8 @@ defmodule ExBuffer do
 
   An ExBuffer can be flushed with the following options:
 
-    * `:async` - Determines whether or not the flush will be asynchronous. (Optional
-      `boolean()`, Default = `true`)
+    * `:async` - A boolean representing whether or not the flush will be asynchronous.
+      By default, this value is `true`. (Optional)
 
   ## Example
 
@@ -205,9 +227,7 @@ defmodule ExBuffer do
   @doc """
   Retuns the size (in bytes) of the given `ExBuffer`.
 
-  Item size is computed using `Kernel.byte_size/1`. Because this function requires
-  a bitstring input, non-bitstring items are first transformed into binary using
-  `:erlang.term_to_binary/1`.
+  For more information on how item size is compued, see `ExBuffer.start_link/1`.
 
   While this functionality may occasionally be desriable in a production environment,
   it is intended to be used primarily for testing and debugging.

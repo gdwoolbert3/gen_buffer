@@ -87,9 +87,10 @@ defmodule ExBuffer.State do
   ################################
 
   defp get_flush_callback(opts) do
-    opts
-    |> Keyword.get(:flush_callback)
-    |> validate_callback(@flush_callback_arity)
+    case Keyword.get(opts, :flush_callback) do
+      nil -> {:ok, nil}
+      callback -> validate_callback(callback, @flush_callback_arity)
+    end
   end
 
   defp get_size_callback(opts) do
@@ -102,7 +103,6 @@ defmodule ExBuffer.State do
   defp get_max_size(opts), do: validate_limit(Keyword.get(opts, :max_size, :infinity))
   defp get_timeout(opts), do: validate_limit(Keyword.get(opts, :buffer_timeout, :infinity))
 
-  defp validate_callback(nil, _), do: {:ok, nil}
   defp validate_callback(fun, arity) when is_function(fun, arity), do: {:ok, fun}
   defp validate_callback(_, _), do: {:error, :invalid_callback}
 
