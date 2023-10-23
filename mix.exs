@@ -42,7 +42,7 @@ defmodule ExBuffer.MixProject do
 
   defp docs do
     [
-      extras: ["README.md"],
+      extras: ["README.md", "CHANGELOG.md"],
       main: "readme",
       source_url: "https://github.com/gdwoolbert3/ex_buffer",
       authors: ["Gordon Woolbert"]

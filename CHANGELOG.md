@@ -19,9 +19,17 @@ All notable changes to this project will be documented in this file.
 * Updated function docs to include doctests.
 * Updated README.md to include a more sophisticated use case.
 * Updated README.md to display build status and [Hex](https://hex.pm/) version.
+
+### Links
+
+* [GitHub](https://github.com/gdwoolbert3/ex_buffer/releases/tag/v0.2.0)
  
 ## [0.1.0] - 2023-10-20
  
 ### Added
 
 * Initial release
+
+### Links
+
+* [HexDocs](https://hexdocs.pm/ex_buffer/0.1.0/readme.html)
