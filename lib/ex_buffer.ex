@@ -38,7 +38,9 @@ defmodule ExBuffer do
 
     * `:flush_callback` - The function that will be invoked to handle a flush.
       This function should expect two parameters: a list of items and a keyword
-      list of flush opts. (Required)
+      list of flush opts. The flush opts include the size and length of the buffer
+      at the time of the flush and optionally include any provided metadata (see
+      `:flush_meta` for more information). (Required)
 
     * `:buffer_timeout` - A non-negative integer representing the maximum time
       (in ms) allowed between flushes of the ExBuffer. Once this amount of time
