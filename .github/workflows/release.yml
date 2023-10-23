@@ -1,13 +1,8 @@
-name: CI
+name: Publish to Hex
 
 on:
-  push:
-    branches:
-      - main
-
-  pull_request:
-    branches:
-      - main
+  release:
+    types: [published]
 
 jobs:
   test:
@@ -47,15 +42,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ env.MIX_ENV }}-build-
 
-      - name: Restore the dialyzer cache
-        uses: actions/cache@v3
-        id: dialyzer-cache
-        with:
-          path: dialyzer
-          key: ${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ env.MIX_ENV }}-dialyzer
-          restore-keys: |
-            ${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ env.MIX_ENV }}-dialyzer
-
       - name: Run CI
         run: |
-          mix ci
+          mix hex.publish --yes
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}

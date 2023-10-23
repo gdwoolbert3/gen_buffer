@@ -2,9 +2,11 @@ defmodule ExBuffer.State do
   @moduledoc false
 
   defstruct [
-    :callback,
+    :flush_callback,
+    :flush_meta,
     :max_length,
     :max_size,
+    :size_callback,
     :timeout,
     buffer: [],
     length: 0,
@@ -12,38 +14,41 @@ defmodule ExBuffer.State do
     timer: nil
   ]
 
+  @type callback :: function() | nil
   @type limit :: non_neg_integer() | :infinity
+  @type timer :: reference() | nil
 
   @type t :: %__MODULE__{
-          callback: function(),
+          flush_callback: callback(),
+          flush_meta: term(),
           max_length: limit(),
           max_size: limit(),
+          size_callback: callback(),
           timeout: limit(),
           buffer: list(),
           length: non_neg_integer(),
           size: non_neg_integer(),
-          timer: reference() | nil
+          timer: timer()
         }
 
-  @callback_arity 1
+  @flush_callback_arity 2
+  @size_callback_arity 1
 
   ################################
   # Public API
   ################################
 
   @doc false
-  @spec flush?(t()) :: boolean()
-  def flush?(state) do
-    exceeds?(state.length, state.max_length) or exceeds?(state.size, state.max_size)
-  end
-
-  @doc false
-  @spec insert(t(), term()) :: t()
+  @spec insert(t(), term()) :: {:flush, t()} | {:cont, t()}
   def insert(state, item) do
-    buffer = [item | state.buffer]
-    length = state.length + 1
-    size = state.size + maybe_item_size(state, item)
-    %{state | buffer: buffer, length: length, size: size}
+    state = %{
+      state
+      | buffer: [item | state.buffer],
+        length: state.length + 1,
+        size: state.size + state.size_callback.(item)
+    }
+
+    if flush?(state), do: {:flush, state}, else: {:cont, state}
   end
 
   @doc false
@@ -51,21 +56,19 @@ defmodule ExBuffer.State do
   def items(state), do: Enum.reverse(state.buffer)
 
   @doc false
-  @spec length(t()) :: non_neg_integer()
-  def length(state), do: state.length
-
-  @doc false
-  @spec new(function(), limit(), limit(), limit(), boolean()) ::
-          {:ok, t()} | {:error, :invalid_callback | :invalid_limit}
-  def new(callback, max_length, max_size, timeout, process) do
-    with :ok <- validate_callback(callback, process),
-         :ok <- validate_limit(max_length),
-         :ok <- validate_limit(max_size),
-         :ok <- validate_limit(timeout) do
+  @spec new(keyword()) :: {:ok, t()} | {:error, :invalid_callback | :invalid_limit}
+  def new(opts) do
+    with {:ok, flush_callback} <- get_flush_callback(opts),
+         {:ok, size_callback} <- get_size_callback(opts),
+         {:ok, max_length} <- get_max_length(opts),
+         {:ok, max_size} <- get_max_size(opts),
+         {:ok, timeout} <- get_timeout(opts) do
       state = %__MODULE__{
-        callback: callback,
+        flush_callback: flush_callback,
+        flush_meta: Keyword.get(opts, :flush_meta),
         max_length: max_length,
         max_size: max_size,
+        size_callback: size_callback,
         timeout: timeout
       }
 
@@ -79,28 +82,33 @@ defmodule ExBuffer.State do
     %{state | buffer: [], length: 0, size: 0, timer: timer}
   end
 
-  @doc false
-  @spec size(t()) :: non_neg_integer()
-  def size(%__MODULE__{buffer: buffer, max_size: :infinity}) do
-    Enum.reduce(buffer, 0, fn item, acc -> item_size(item) + acc end)
-  end
-
-  def size(state), do: state.size
-
   ################################
   # Private API
   ################################
 
-  defp validate_callback(_, false), do: :ok
-  defp validate_callback(fun, _) when is_function(fun, @callback_arity), do: :ok
+  defp get_flush_callback(opts) do
+    case Keyword.get(opts, :flush_callback) do
+      nil -> {:ok, nil}
+      callback -> validate_callback(callback, @flush_callback_arity)
+    end
+  end
+
+  defp get_size_callback(opts) do
+    opts
+    |> Keyword.get(:size_callback, &item_size/1)
+    |> validate_callback(@size_callback_arity)
+  end
+
+  defp get_max_length(opts), do: validate_limit(Keyword.get(opts, :max_length, :infinity))
+  defp get_max_size(opts), do: validate_limit(Keyword.get(opts, :max_size, :infinity))
+  defp get_timeout(opts), do: validate_limit(Keyword.get(opts, :buffer_timeout, :infinity))
+
+  defp validate_callback(fun, arity) when is_function(fun, arity), do: {:ok, fun}
   defp validate_callback(_, _), do: {:error, :invalid_callback}
 
-  defp validate_limit(:infinity), do: :ok
-  defp validate_limit(limit) when is_integer(limit) and limit >= 0, do: :ok
+  defp validate_limit(:infinity), do: {:ok, :infinity}
+  defp validate_limit(limit) when is_integer(limit) and limit >= 0, do: {:ok, limit}
   defp validate_limit(_), do: {:error, :invalid_limit}
-
-  defp maybe_item_size(%__MODULE__{max_size: :infinity}, _), do: 0
-  defp maybe_item_size(_, item), do: item_size(item)
 
   defp item_size(item) when is_bitstring(item), do: byte_size(item)
 
@@ -108,6 +116,10 @@ defmodule ExBuffer.State do
     item
     |> :erlang.term_to_binary()
     |> byte_size()
+  end
+
+  defp flush?(state) do
+    exceeds?(state.length, state.max_length) or exceeds?(state.size, state.max_size)
   end
 
   defp exceeds?(_, :infinity), do: false

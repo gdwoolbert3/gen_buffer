@@ -12,11 +12,18 @@ defmodule ExBuffer do
 
   use GenServer
 
-  alias ExBuffer.State
+  alias ExBuffer.{State, Utils}
 
   @type t :: GenServer.name() | pid()
 
-  @ex_buffer_fields [:callback, :buffer_timeout, :max_length, :max_size]
+  @ex_buffer_fields [
+    :buffer_timeout,
+    :flush_callback,
+    :flush_meta,
+    :max_length,
+    :max_size,
+    :size_callback
+  ]
 
   ################################
   # Public API
@@ -29,22 +36,35 @@ defmodule ExBuffer do
 
   An ExBuffer can be started with the following options:
 
-    * `:callback` - The function that will be invoked to handle a flush. This
-      function should expect a single parameter: a list of items. (Required
-      `function()`)
+    * `:flush_callback` - The function that will be invoked to handle a flush.
+      This function should expect two parameters: a list of items and a keyword
+      list of flush opts. The flush opts include the size and length of the buffer
+      at the time of the flush and optionally include any provided metadata (see
+      `:flush_meta` for more information). (Required)
 
-    * `:buffer_timeout` - The maximum time (in ms) allowed between flushes of
-      the ExBuffer. Once this amount of time has passed, the ExBuffer will be
-      flushed. (Optional `non_neg_integer()`, Default = `:infinity`)
+    * `:buffer_timeout` - A non-negative integer representing the maximum time
+      (in ms) allowed between flushes of the ExBuffer. Once this amount of time
+      has passed, the ExBuffer will be flushed. By default, an ExBuffer does not
+      have a timeout. (Optional)
 
-    * `:max_length` - The maximum allowed length (item count) of the ExBuffer.
-      Once the limit is hit, the ExBuffer will be flushed. (Optional
-      `non_neg_integer()`, Default = `:infinity`)
+    * `:flush_meta` - A term to be included in the flush opts under the `meta` key.
+      By default, this value will be `nil`. (Optional)
 
-    * `:max_size` - The maximum allowed size (in bytes) of the ExBuffer. Once
-      the limit is hit (or exceeded), the ExBuffer will be flushed. For more
-      information on how size is computed, see `ExBuffer.size/1`. (Optional
-      `non_neg_integer()`, Default = `:infinity`)
+    * `:max_length` - A non-negative integer representing the maximum allowed
+      length (item count) of the ExBuffer. Once the limit is hit, the ExBuffer will
+      be flushed. By default, an ExBuffer does not have a max length. (Optional)
+
+    * `:max_size` - A non-negative integer representing the maximum allowed size
+      (in bytes) of the ExBuffer. Once the limit is hit (or exceeded), the ExBuffer
+      will be flushed. The `:size_callback` option determines how item size is
+      computed. By default, an ExBuffer does not have a max size. (Optional)
+
+    * `:size_callback` - The function that will be invoked to deterime the size
+      of an item. This function should expect a single parameter representing an
+      item and should return a single non-negative integer representing that item's
+      byte size. By default, an ExBuffer's size callback is `Kernel.byte_size/1`
+      (`:erlang.term_to_binary/1` is used to convert non-bitstring inputs to binary
+      if necessary). (Optional)
 
   Additionally, an ExBuffer can also be started with any `GenServer` options.
   """
@@ -68,15 +88,19 @@ defmodule ExBuffer do
 
   An enumerable can be chunked with the following options:
 
-    * `:max_length` - The maximum allowed length (item count) of a chunk.
-      (Optional `non_neg_integer()`, Default = `:infinity`)
+    * `:max_length` - A non-negative integer representing the maximum allowed
+      length (item count) of a chunk. By default, there is no max length. (Optional)
 
-    * `:max_size` - The maximum allowed size (in bytes) of a chunk. (Optional
-      `non_neg_integer()`, Default = `:infinity`)
+    * `:max_size` - A non-negative integer representing the maximum allowed size
+      (in bytes) of a chunk. The `:size_callback` option determines how item size
+      is computed. By default, there is no max size. (Optional)
+
+    * `:size_callback` - The function that will be invoked to deterime the size
+      of an item. For more information, see `ExBuffer.start_link/1`. (Optional)
 
   > #### Warning {: .warning}
   >
-  > Not including either of the options above is permitted but will result in a
+  > Including neither `:max_length` nor `:max_size` is permitted but will result in a
   > single chunk being emitted. One can achieve a similar result in a more performant
   > way using `Stream.into/2`. In that same vein, including only a `:max_length`
   > condition makes this function a less performant version of `Stream.chunk_every/2`.
@@ -85,41 +109,35 @@ defmodule ExBuffer do
 
   ## Example
 
-      enum = ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
+      iex> ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
+      ...> |> ExBuffer.chunk!(max_length: 3, max_size: 10)
+      ...> |> Enum.into([])
+      [["foo", "bar", "baz"], ["foobar", "barbaz"], ["foobarbaz"]]
 
-      enum
-      |> ExBuffer.chunk_enum!(max_length: 3, max_size: 10)
-      |> Enum.into([])
-      #=> [["foo", "bar", "baz"], ["foobar", "barbaz"], ["foobarbaz"]]
+      iex> ["foo", "bar", "baz"]
+      ...> |> ExBuffer.chunk!(max_size: 8, size_callback: &(byte_size(&1) + 1))
+      ...> |> Enum.into([])
+      [["foo", "bar"], ["baz"]]
+
+      iex> ExBuffer.chunk!(["foo", "bar", "baz"], max_length: -5)
+      ** (ArgumentError) invalid limit
   """
-  @spec chunk_enum!(Enumerable.t(), keyword()) :: Enumerable.t()
-  def chunk_enum!(enum, opts \\ []) do
-    opts
-    |> Keyword.take([:max_length, :max_size])
-    |> init_state(false)
-    |> case do
-      {:ok, state} -> Stream.chunk_while(enum, state, &do_insert(&2, &1), &chunk_end/1)
-      {:error, reason} -> raise(ArgumentError, to_message(reason))
-    end
-  end
+  @spec chunk!(Enumerable.t(), keyword()) :: Enumerable.t()
+  defdelegate chunk!(enumerable, opts \\ []), to: Utils
 
   @doc """
   Dumps the contents of the given `ExBuffer` to a list, bypassing a flush
   callback and resetting the buffer.
 
-  While this behavior may occasionally be desriable in a production environment,
+  While this functionality may occasionally be desriable in a production environment,
   it is intended to be used primarily for testing and debugging.
 
   ## Example
 
-      ExBuffer.insert(:test_buffer, "foo")
-      ExBuffer.insert(:test_buffer, "bar")
-
-      ExBuffer.dump(:test_buffer)
-      #=> ["foo", "bar"]
-
-      ExBuffer.length(:test_buffer)
-      #=> 0
+      iex> ExBuffer.insert(:buffer, "foo")
+      iex> ExBuffer.insert(:buffer, "bar")
+      iex> ExBuffer.dump(:buffer)
+      ["foo", "bar"]
   """
   @spec dump(t()) :: list()
   def dump(buffer), do: GenServer.call(buffer, :dump)
@@ -128,27 +146,24 @@ defmodule ExBuffer do
   Flushes the given `ExBuffer`, regardless of whether or not the flush conditions
   have been met.
 
-  While this behavior may occasionally be desriable in a production environment,
+  While this functionality may occasionally be desriable in a production environment,
   it is intended to be used primarily for testing and debugging.
 
   ## Options
 
   An ExBuffer can be flushed with the following options:
 
-    * `:async` - Determines whether or not the flush will be asynchronous. (Optional
-      `boolean()`, Default = `true`)
+    * `:async` - A boolean representing whether or not the flush will be asynchronous.
+      By default, this value is `true`. (Optional)
 
   ## Example
 
-      ExBuffer.insert(:test_buffer, "foo")
-      ExBuffer.insert(:test_buffer, "bar")
-
-      # Assuming the flush callback is `IO.inspect/1`
-      ExBuffer.flush(:test_buffer)
-      #=> outputs ["foo", "bar"]
-
-      ExBuffer.length(:test_buffer)
-      #=> 0
+      iex> ExBuffer.insert(:buffer, "foo")
+      iex> ExBuffer.insert(:buffer, "bar")
+      ...>
+      ...> # Invokes callback on ["foo", "bar"]
+      iex> ExBuffer.flush(:buffer)
+      :ok
   """
   @spec flush(t(), keyword()) :: :ok
   def flush(buffer, opts \\ []) do
@@ -164,11 +179,8 @@ defmodule ExBuffer do
 
   ## Example
 
-      ExBuffer.insert(:test_buffer, "foo")
-      #=> :test_buffer items = ["foo"]
-
-      ExBuffer.insert(:test_buffer, "bar")
-      #=> :test_buffer items = ["foo", "bar"]
+      iex> ExBuffer.insert(:buffer, "foo")
+      :ok
   """
   @spec insert(t(), term()) :: :ok
   def insert(buffer, item), do: GenServer.call(buffer, {:insert, item})
@@ -176,37 +188,52 @@ defmodule ExBuffer do
   @doc """
   Returns the length (item count) of the given `ExBuffer`.
 
-  While this behavior may occasionally be desriable in a production environment,
+  While this functionality may occasionally be desriable in a production environment,
   it is intended to be used primarily for testing and debugging.
 
   ## Example
 
-      ExBuffer.insert(:test_buffer, "foo")
-      ExBuffer.insert(:test_buffer, "bar")
-
-      ExBuffer.length(:test_buffer)
-      #=> 2
+      iex> ExBuffer.insert(:buffer, "foo")
+      iex> ExBuffer.insert(:buffer, "bar")
+      iex> ExBuffer.length(:buffer)
+      2
   """
   @spec length(t()) :: non_neg_integer()
   def length(buffer), do: GenServer.call(buffer, :length)
 
   @doc """
-  Retuns the size (in bytes) of the given `ExBuffer`.
+  Returns the time (in ms) before the next scheduled flush.
 
-  Item size is computed using `Kernel.byte_size/1`. Because this function requires
-  a bitstring input, non-bitstring items are first transformed into binary using
-  `:erlang.term_to_binary/1`.
+  If the given ExBuffer does not have a timeout, this function returns `nil`.
 
-  While this behavior may occasionally be desriable in a production environment,
+  While this functionality may occasionally be desriable in a production environment,
   it is intended to be used primarily for testing and debugging.
 
   ## Example
 
-      ExBuffer.insert(:test_buffer, "foo")
-      ExBuffer.insert(:test_buffer, "bar")
+      iex> next_flush = ExBuffer.next_flush(:buffer)
+      ...>
+      ...> # Assuming :buffer has a timeout...
+      iex> is_integer(next_flush)
+      true
+  """
+  @spec next_flush(t()) :: non_neg_integer() | nil
+  def next_flush(buffer), do: GenServer.call(buffer, :next_flush)
 
-      ExBuffer.size(:test_buffer)
-      #=> 6
+  @doc """
+  Retuns the size (in bytes) of the given `ExBuffer`.
+
+  For more information on how item size is computed, see `ExBuffer.start_link/1`.
+
+  While this functionality may occasionally be desriable in a production environment,
+  it is intended to be used primarily for testing and debugging.
+
+  ## Example
+
+      iex> ExBuffer.insert(:buffer, "foo")
+      iex> ExBuffer.insert(:buffer, "bar")
+      iex> ExBuffer.size(:buffer)
+      6
   """
   @spec size(t()) :: non_neg_integer()
   def size(buffer), do: GenServer.call(buffer, :size)
@@ -228,85 +255,69 @@ defmodule ExBuffer do
   @doc false
   @impl GenServer
   @spec handle_call(term(), GenServer.from(), State.t()) ::
-          {:reply, term(), State.t()} | {:reply, term(), State.t(), {:continue, {:flush, list()}}}
+          {:reply, term(), State.t()}
+          | {:reply, term(), State.t(), {:continue, :flush | :refresh}}
   def handle_call(:dump, _from, state) do
     {:reply, State.items(state), refresh_state(state)}
   end
 
   def handle_call(:async_flush, _from, state) do
-    {state, items} = flush_state(state)
-    {:reply, :ok, state, {:continue, {:flush, items}}}
+    {:reply, :ok, state, {:continue, :flush}}
   end
 
   def handle_call(:sync_flush, _from, state) do
-    {:reply, :ok, do_sync_flush(state)}
+    do_flush(state)
+    {:reply, :ok, state, {:continue, :refresh}}
   end
 
   def handle_call({:insert, item}, _from, state) do
-    case do_insert(state, item) do
-      {:cont, items, state} -> {:reply, :ok, state, {:continue, {:flush, items}}}
+    case State.insert(state, item) do
+      {:flush, state} -> {:reply, :ok, state, {:continue, :flush}}
       {:cont, state} -> {:reply, :ok, state}
     end
   end
 
-  def handle_call(:length, _from, state), do: {:reply, State.length(state), state}
-  def handle_call(:size, _from, state), do: {:reply, State.size(state), state}
+  def handle_call(:length, _from, state), do: {:reply, state.length, state}
+  def handle_call(:next_flush, _from, state), do: {:reply, get_next_flush(state), state}
+  def handle_call(:size, _from, state), do: {:reply, state.size, state}
 
   @doc false
   @impl GenServer
-  @spec handle_continue(term(), State.t()) :: {:noreply, State.t()}
-  def handle_continue({:flush, items}, state) do
-    state.callback.(items)
-    {:noreply, state}
+  @spec handle_continue(term(), State.t()) ::
+          {:noreply, State.t()} | {:noreply, State.t(), {:continue, :refresh}}
+  def handle_continue(:flush, state) do
+    do_flush(state)
+    {:noreply, state, {:continue, :refresh}}
   end
+
+  def handle_continue(:refresh, state), do: {:noreply, refresh_state(state)}
 
   @doc false
   @impl GenServer
   @spec handle_info(term(), State.t()) ::
-          {:noreply, State.t()} | {:noreply, State.t(), {:continue, {:flush, list()}}}
+          {:noreply, State.t()} | {:noreply, State.t(), {:continue, :flush}}
   def handle_info({:timeout, timer, :flush}, state) when timer == state.timer do
-    {state, items} = flush_state(state)
-    {:noreply, state, {:continue, {:flush, items}}}
+    {:noreply, state, {:continue, :flush}}
   end
 
   def handle_info(_, state), do: {:noreply, state}
 
   @doc false
   @impl GenServer
-  @spec terminate(term(), State.t()) :: :ok | State.t()
+  @spec terminate(term(), State.t()) :: term()
   def terminate(reason, _) when reason in [:invalid_callback, :invalid_limit], do: :ok
-  def terminate(_, state), do: do_sync_flush(state)
+  def terminate(_, state), do: do_flush(state)
 
   ################################
   # Private API
   ################################
 
-  defp init_state(opts, process \\ true) do
-    callback = Keyword.get(opts, :callback)
-    max_length = Keyword.get(opts, :max_length, :infinity)
-    max_size = Keyword.get(opts, :max_size, :infinity)
-    timeout = Keyword.get(opts, :buffer_timeout, :infinity)
-    State.new(callback, max_length, max_size, timeout, process)
-  end
-
-  defp do_insert(state, item) do
-    state = State.insert(state, item)
-
-    if State.flush?(state) do
-      {state, items} = flush_state(state)
-      {:cont, items, state}
-    else
-      {:cont, state}
+  defp init_state(opts) do
+    case Keyword.get(opts, :flush_callback) do
+      nil -> {:error, :invalid_callback}
+      _ -> State.new(opts)
     end
   end
-
-  defp do_sync_flush(state) do
-    {state, items} = flush_state(state)
-    state.callback.(items)
-    state
-  end
-
-  defp flush_state(state), do: {refresh_state(state), State.items(state)}
 
   defp refresh_state(%State{timeout: :infinity} = state), do: State.refresh(state)
 
@@ -320,13 +331,22 @@ defmodule ExBuffer do
   defp cancel_upcoming_flush(state), do: Process.cancel_timer(state.timer)
 
   defp schedule_next_flush(state) do
-    # We use `:erlang.start_timer/3` to include the timer ref in the message
-    # This is necessary for handling occasional race conditions
+    # We use `:erlang.start_timer/3` to include the timer ref in the message. This is necessary
+    # for handling race conditions resulting from multiple simultaneous flush conditions.
     :erlang.start_timer(state.timeout, self(), :flush)
   end
 
-  defp chunk_end(%State{buffer: []} = state), do: {:cont, state}
-  defp chunk_end(state), do: {:cont, State.items(state), refresh_state(state)}
+  defp get_next_flush(%State{timer: nil}), do: nil
 
-  defp to_message(reason), do: String.replace(to_string(reason), "_", " ")
+  defp get_next_flush(state) do
+    with false <- Process.read_timer(state.timer), do: nil
+  end
+
+  defp do_flush(state) do
+    opts = [length: state.length, meta: state.flush_meta, size: state.size]
+
+    state
+    |> State.items()
+    |> state.flush_callback.(opts)
+  end
 end
