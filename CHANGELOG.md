@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
   `ExBuffer.start_link/1` and `ExBuffer.chunk!/2`)
 * Added the ability to include metadata in the flush callback (see `:flush_meta` option for `ExBuffer.start_link/1`)
 * Added the ability to get the time until the next scheduled flush (see `ExBuffer.next_flush/1`).
+* Added benchee dependency for local benchmarking.
 
 ### Changed
 
