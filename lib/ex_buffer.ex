@@ -59,7 +59,7 @@ defmodule ExBuffer do
       will be flushed. The `:size_callback` option determines how item size is
       computed. By default, an ExBuffer does not have a max size. (Optional)
 
-    * `:size_callback` - The function that will be invoked to deterime the size
+    * `:size_callback` - The function that will be invoked to determine the size
       of an item. This function should expect a single parameter representing an
       item and should return a single non-negative integer representing that item's
       byte size. By default, an ExBuffer's size callback is `Kernel.byte_size/1`

@@ -6,7 +6,7 @@ on:
 
 jobs:
   test:
-    name: Run tests
+    name: Publish to Hex
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -42,7 +42,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-${{ env.MIX_ENV }}-build-
 
-      - name: Run CI
+      - name: Publish
         run: |
           mix hex.publish --yes
         env:
