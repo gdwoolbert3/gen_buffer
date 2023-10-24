@@ -12,7 +12,7 @@ This package can be installed by adding `:ex_buffer` to your list of dependencie
 ```elixir
 def deps do
   [
-    {:ex_buffer "~> 0.2.0"}
+    {:ex_buffer "~> 0.2.1"}
   ]
 end
 ```
@@ -69,6 +69,10 @@ defmodule PartitionedBuffer do
     Supervisor.start_link(__MODULE__, ex_buffer_opts, name: __MODULE__)
   end
 
+  def insert(item, partition) do
+    ExBuffer.insert({:via, PartitionSupervisor, {:buffer, partition}}, item)
+  end
+
   @impl Supervisor
   def init(opts) do
     part_sup_opts = [
@@ -97,13 +101,13 @@ We can easily start the `PartitionedBuffer` process from above to see it in acti
 ```elixir
 PartitionedBuffer.start_link()
 
-ExBuffer.insert({:via, PartitionSupervisor, {:buffer, 0}}, "foo")
-ExBuffer.insert({:via, PartitionSupervisor, {:buffer, 1}}, "foo")
-ExBuffer.insert({:via, PartitionSupervisor, {:buffer, 0}}, "bar")
-ExBuffer.insert({:via, PartitionSupervisor, {:buffer, 1}}, "bar")
-ExBuffer.insert({:via, PartitionSupervisor, {:buffer, 0}}, "baz")
+PartitionedBuffer.insert("foo", 0)
+PartitionedBuffer.insert("foo", 1)
+PartitionedBuffer.insert("bar", 0)
+PartitionedBuffer.insert("bar", 1)
+PartitionedBuffer.insert("baz", 0)
 # ExBuffer flushes asynchronously and outputs {0, ["foo", "bar", "baz"]}
 
-ExBuffer.insert({:via, PartitionSupervisor, {:buffer, 1}}, "baz")
+PartitionedBuffer.insert("baz", 1)
 # ExBuffer flushes asynchronously and outputs {1, ["foo", "bar", "baz"]}
 ```
