@@ -1,6 +1,16 @@
 # Change Log
 
 All notable changes to this project will be documented in this file.
+
+## [0.2.1] - 2023-10-23
+
+### Changed
+
+* Condensed code into a single module.
+
+### Links
+
+* [GitHub](https://github.com/gdwoolbert3/ex_buffer/releases/tag/v0.2.0)
  
 ## [0.2.0] - 2023-10-22
 
