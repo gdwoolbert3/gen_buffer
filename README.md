@@ -91,7 +91,7 @@ defmodule PartitionedBuffer do
 
   defp handle_flush(data, opts) do
     partition = Keyword.get(opts, :meta)
-    IO.inspect({partition, data, size})
+    IO.inspect({partition, data})
   end
 end
 ```
