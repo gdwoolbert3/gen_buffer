@@ -12,7 +12,7 @@ This package can be installed by adding `:ex_buffer` to your list of dependencie
 ```elixir
 def deps do
   [
-    {:ex_buffer "~> 0.2.0"}
+    {:ex_buffer "~> 0.2.1"}
   ]
 end
 ```
