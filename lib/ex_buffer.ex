@@ -10,27 +10,9 @@ defmodule ExBuffer do
   ExBuffers also come with a number of helpful tools for testing and debugging.
   """
 
-  use GenServer
+  alias ExBuffer.Buffer.{Server, Stream}
 
-  defstruct [
-    :flush_callback,
-    :flush_meta,
-    :max_length,
-    :max_size,
-    :size_callback,
-    :timeout,
-    buffer: [],
-    length: 0,
-    size: 0,
-    timer: nil
-  ]
-
-  @opaque t :: %__MODULE__{}
-
-  @server_fields [:buffer_timeout, :flush_callback, :flush_meta]
-  @stream_fields [:max_length, :max_size, :size_callback]
-  @flush_callback_arity 2
-  @size_callback_arity 1
+  @type error :: :invalid_callback | :invalid_limit
 
   ################################
   # Public API
@@ -76,13 +58,10 @@ defmodule ExBuffer do
   Additionally, an ExBuffer can also be started with any `GenServer` options.
   """
   @spec start_link(keyword()) :: GenServer.on_start()
-  def start_link(opts \\ []) do
-    {opts, server_opts} = Keyword.split(opts, @stream_fields ++ @server_fields)
-    GenServer.start_link(__MODULE__, opts, server_opts)
-  end
+  defdelegate start_link(opts \\ []), to: Server
 
   @doc """
-  Lazily chunks an enumerable based on one or more ExBuffer flush conditions.
+  Lazily chunks an enumerable based on ExBuffer flush conditions.
 
   This function currently supports length and size conditions. If multiple
   conditions are specified, a chunk is emitted once the **first** condition is
@@ -116,6 +95,30 @@ defmodule ExBuffer do
 
   ## Example
 
+      iex> enum = ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
+      ...> {:ok, enum} = ExBuffer.chunk(enum, max_length: 3, max_size: 10)
+      ...> Enum.into(enum, [])
+      [["foo", "bar", "baz"], ["foobar", "barbaz"], ["foobarbaz"]]
+
+      iex> enum = ["foo", "bar", "baz"]
+      ...> {:ok, enum} = ExBuffer.chunk(enum, max_size: 8, size_callback: &(byte_size(&1) + 1))
+      ...> Enum.into(enum, [])
+      [["foo", "bar"], ["baz"]]
+
+      iex> ExBuffer.chunk(["foo", "bar", "baz"], max_length: -5)
+      {:error, :invalid_limit}
+  """
+  @spec chunk(Enumerable.t(), keyword()) :: {:ok, Enumerable.t()} | {:error, error()}
+  defdelegate chunk(enum, opts \\ []), to: Stream
+
+  @doc """
+  Lazily chunks an enumerable based on ExBuffer flush conditions and raises an `ArgumentError`
+  with invalid options.
+
+  For more information on this function's usage, purpose, and options, see `ExBuffer.chunk!/2`.
+
+  ## Example
+
       iex> ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
       ...> |> ExBuffer.chunk!(max_length: 3, max_size: 10)
       ...> |> Enum.into([])
@@ -130,12 +133,7 @@ defmodule ExBuffer do
       ** (ArgumentError) invalid limit
   """
   @spec chunk!(Enumerable.t(), keyword()) :: Enumerable.t()
-  def chunk!(enum, opts \\ []) do
-    case init_stream_state(opts) do
-      {:ok, state} -> Stream.chunk_while(enum, state, &chunk_fun(&2, &1), &after_fun/1)
-      {:error, reason} -> raise(ArgumentError, to_message(reason))
-    end
-  end
+  defdelegate chunk!(enum, opts \\ []), to: Stream
 
   @doc """
   Dumps the contents of the given `ExBuffer` to a list, bypassing a flush
@@ -152,7 +150,7 @@ defmodule ExBuffer do
       ["foo", "bar"]
   """
   @spec dump(GenServer.server()) :: list()
-  def dump(buffer), do: GenServer.call(buffer, :dump)
+  defdelegate dump(buffer), to: Server
 
   @doc """
   Flushes the given `ExBuffer`, regardless of whether or not the flush conditions
@@ -178,13 +176,7 @@ defmodule ExBuffer do
       :ok
   """
   @spec flush(GenServer.server(), keyword()) :: :ok
-  def flush(buffer, opts \\ []) do
-    if Keyword.get(opts, :async, true) do
-      GenServer.call(buffer, :async_flush)
-    else
-      GenServer.call(buffer, :sync_flush)
-    end
-  end
+  defdelegate flush(buffer, opts \\ []), to: Server
 
   @doc """
   Inserts the given item into the given `ExBuffer`.
@@ -195,7 +187,7 @@ defmodule ExBuffer do
       :ok
   """
   @spec insert(GenServer.server(), term()) :: :ok
-  def insert(buffer, item), do: GenServer.call(buffer, {:insert, item})
+  defdelegate insert(buffer, item), to: Server
 
   @doc """
   Returns the length (item count) of the given `ExBuffer`.
@@ -211,7 +203,7 @@ defmodule ExBuffer do
       2
   """
   @spec length(GenServer.server()) :: non_neg_integer()
-  def length(buffer), do: GenServer.call(buffer, :length)
+  defdelegate length(buffer), to: Server
 
   @doc """
   Returns the time (in ms) before the next scheduled flush.
@@ -230,7 +222,7 @@ defmodule ExBuffer do
       true
   """
   @spec next_flush(GenServer.server()) :: non_neg_integer() | nil
-  def next_flush(buffer), do: GenServer.call(buffer, :next_flush)
+  defdelegate next_flush(buffer), to: Server
 
   @doc """
   Retuns the size (in bytes) of the given `ExBuffer`.
@@ -248,217 +240,11 @@ defmodule ExBuffer do
       6
   """
   @spec size(GenServer.server()) :: non_neg_integer()
-  def size(buffer), do: GenServer.call(buffer, :size)
-
-  ################################
-  # GenServer Callbacks
-  ################################
+  defdelegate size(buffer), to: Server
 
   @doc false
-  @impl GenServer
-  @spec init(keyword()) ::
-          {:ok, t(), {:continue, :refresh}} | {:stop, :invalid_callback | :invalid_limit}
-  def init(opts) do
-    case init_server_state(opts) do
-      {:ok, state} -> {:ok, state, {:continue, :refresh}}
-      {:error, reason} -> {:stop, reason}
-    end
-  end
-
-  @doc false
-  @impl GenServer
-  @spec handle_call(term(), GenServer.from(), t()) ::
-          {:reply, term(), t()} | {:reply, term(), t(), {:continue, :flush | :refresh}}
-  def handle_call(:dump, _from, state) do
-    {:reply, items(state), state, {:continue, :refresh}}
-  end
-
-  def handle_call(:async_flush, _from, state) do
-    {:reply, :ok, state, {:continue, :flush}}
-  end
-
-  def handle_call(:sync_flush, _from, state) do
-    do_flush(state)
-    {:reply, :ok, state, {:continue, :refresh}}
-  end
-
-  def handle_call({:insert, item}, _from, state) do
-    case do_insert(state, item) do
-      {:flush, state} -> {:reply, :ok, state, {:continue, :flush}}
-      {:cont, state} -> {:reply, :ok, state}
-    end
-  end
-
-  def handle_call(:length, _from, state), do: {:reply, state.length, state}
-  def handle_call(:next_flush, _from, state), do: {:reply, get_next_flush(state), state}
-  def handle_call(:size, _from, state), do: {:reply, state.size, state}
-
-  @doc false
-  @impl GenServer
-  @spec handle_continue(term(), t()) :: {:noreply, t()} | {:noreply, t(), {:continue, :refresh}}
-  def handle_continue(:flush, state) do
-    do_flush(state)
-    {:noreply, state, {:continue, :refresh}}
-  end
-
-  def handle_continue(:refresh, state), do: {:noreply, do_refresh(state)}
-
-  @doc false
-  @impl GenServer
-  @spec handle_info(term(), t()) :: {:noreply, t()} | {:noreply, t(), {:continue, :flush}}
-  def handle_info({:timeout, timer, :flush}, state) when timer == state.timer do
-    {:noreply, state, {:continue, :flush}}
-  end
-
-  def handle_info(_, state), do: {:noreply, state}
-
-  @doc false
-  @impl GenServer
-  @spec terminate(term(), t()) :: term()
-  def terminate(reason, _) when reason in [:invalid_callback, :invalid_limit], do: :ok
-  def terminate(_, state), do: do_flush(state)
-
-  ################################
-  # Private Server API
-  ################################
-
-  defp init_server_state(opts) do
-    case Keyword.get(opts, :flush_callback) do
-      nil -> {:error, :invalid_callback}
-      _ -> init_state(opts)
-    end
-  end
-
-  defp get_next_flush(%__MODULE__{timer: nil}), do: nil
-
-  defp get_next_flush(state) do
-    with false <- Process.read_timer(state.timer), do: nil
-  end
-
-  defp do_flush(state) do
-    opts = [length: state.length, meta: state.flush_meta, size: state.size]
-
-    state
-    |> items()
-    |> state.flush_callback.(opts)
-  end
-
-  ################################
-  # Private Stream API
-  ################################
-
-  defp init_stream_state(opts) do
-    opts
-    |> Keyword.take(@stream_fields)
-    |> init_state()
-  end
-
-  defp chunk_fun(state, item) do
-    with {:flush, state} <- do_insert(state, item) do
-      {:cont, items(state), do_refresh(state)}
-    end
-  end
-
-  defp after_fun(%__MODULE__{buffer: []} = state), do: {:cont, state}
-  defp after_fun(state), do: {:cont, items(state), do_refresh(state)}
-
-  defp to_message(reason), do: String.replace(to_string(reason), "_", " ")
-
-  ################################
-  # Private State Update API
-  ################################
-
-  defp do_refresh(%__MODULE__{timeout: :infinity} = state) do
-    %{state | buffer: [], length: 0, size: 0}
-  end
-
-  defp do_refresh(state) do
-    cancel_upcoming_flush(state)
-    timer = schedule_next_flush(state)
-    %{state | buffer: [], length: 0, size: 0, timer: timer}
-  end
-
-  defp cancel_upcoming_flush(%__MODULE__{timer: nil}), do: :ok
-  defp cancel_upcoming_flush(state), do: Process.cancel_timer(state.timer)
-
-  defp schedule_next_flush(state) do
-    # We use `:erlang.start_timer/3` to include the timer ref in the message. This is necessary
-    # for handling race conditions resulting from multiple simultaneous flush conditions.
-    :erlang.start_timer(state.timeout, self(), :flush)
-  end
-
-  defp do_insert(state, item) do
-    state = %{
-      state
-      | buffer: [item | state.buffer],
-        length: state.length + 1,
-        size: state.size + state.size_callback.(item)
-    }
-
-    if flush?(state), do: {:flush, state}, else: {:cont, state}
-  end
-
-  defp flush?(state) do
-    exceeds?(state.length, state.max_length) or exceeds?(state.size, state.max_size)
-  end
-
-  defp exceeds?(_, :infinity), do: false
-  defp exceeds?(num, max), do: num >= max
-
-  defp items(state), do: Enum.reverse(state.buffer)
-
-  ################################
-  # Private State Init API
-  ################################
-
-  defp init_state(opts) do
-    with {:ok, flush_callback} <- get_flush_callback(opts),
-         {:ok, size_callback} <- get_size_callback(opts),
-         {:ok, max_length} <- get_max_length(opts),
-         {:ok, max_size} <- get_max_size(opts),
-         {:ok, timeout} <- get_timeout(opts) do
-      state = %__MODULE__{
-        flush_callback: flush_callback,
-        flush_meta: Keyword.get(opts, :flush_meta),
-        max_length: max_length,
-        max_size: max_size,
-        size_callback: size_callback,
-        timeout: timeout
-      }
-
-      {:ok, state}
-    end
-  end
-
-  defp get_flush_callback(opts) do
-    case Keyword.get(opts, :flush_callback) do
-      nil -> {:ok, nil}
-      callback -> validate_callback(callback, @flush_callback_arity)
-    end
-  end
-
-  defp get_size_callback(opts) do
-    opts
-    |> Keyword.get(:size_callback, &item_size/1)
-    |> validate_callback(@size_callback_arity)
-  end
-
-  defp get_max_length(opts), do: validate_limit(Keyword.get(opts, :max_length, :infinity))
-  defp get_max_size(opts), do: validate_limit(Keyword.get(opts, :max_size, :infinity))
-  defp get_timeout(opts), do: validate_limit(Keyword.get(opts, :buffer_timeout, :infinity))
-
-  defp validate_callback(fun, arity) when is_function(fun, arity), do: {:ok, fun}
-  defp validate_callback(_, _), do: {:error, :invalid_callback}
-
-  defp validate_limit(:infinity), do: {:ok, :infinity}
-  defp validate_limit(limit) when is_integer(limit) and limit >= 0, do: {:ok, limit}
-  defp validate_limit(_), do: {:error, :invalid_limit}
-
-  defp item_size(item) when is_bitstring(item), do: byte_size(item)
-
-  defp item_size(item) do
-    item
-    |> :erlang.term_to_binary()
-    |> byte_size()
+  @spec child_spec(keyword()) :: map()
+  def child_spec(opts) do
+    %{id: __MODULE__, start: {__MODULE__, :start_link, [opts]}}
   end
 end

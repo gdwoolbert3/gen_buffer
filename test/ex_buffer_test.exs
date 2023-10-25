@@ -63,6 +63,33 @@ defmodule ExBufferTest do
     end
   end
 
+  describe "chunk/2" do
+    test "will correctly chunk an enumerable" do
+      enum = ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
+
+      assert {:ok, enum} = ExBuffer.chunk(enum, max_length: 3, max_size: 10)
+      assert Enum.into(enum, []) == [["foo", "bar", "baz"], ["foobar", "barbaz"], ["foobarbaz"]]
+    end
+
+    test "will correctly chunk an enumerable with a size callback" do
+      enum = ["foo", "bar", "baz"]
+
+      assert {:ok, enum} = ExBuffer.chunk(enum, max_size: 8, size_callback: &(byte_size(&1) + 1))
+      assert Enum.into(enum, []) == [["foo", "bar"], ["baz"]]
+    end
+
+    test "will return an error with an invalid callback" do
+      callback = fn -> :ok end
+      enum = ["foo", "bar", "baz"]
+
+      assert ExBuffer.chunk(enum, size_callback: callback) == {:error, :invalid_callback}
+    end
+
+    test "will return an error with an invalid limit" do
+      assert ExBuffer.chunk(["foo", "bar", "baz"], max_length: -5) == {:error, :invalid_limit}
+    end
+  end
+
   describe "chunk!/2" do
     test "will correctly chunk an enumerable" do
       enum = ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
@@ -76,6 +103,12 @@ defmodule ExBufferTest do
       enum = ExBuffer.chunk!(enum, max_size: 8, size_callback: &(byte_size(&1) + 1))
 
       assert Enum.into(enum, []) == [["foo", "bar"], ["baz"]]
+    end
+
+    test "will raise an error with an invalid callback" do
+      fun = fn -> ExBuffer.chunk!(["foo", "bar", "baz"], size_callback: fn -> :ok end) end
+
+      assert_raise ArgumentError, "invalid callback", fun
     end
 
     test "will raise an error with an invalid limit" do
