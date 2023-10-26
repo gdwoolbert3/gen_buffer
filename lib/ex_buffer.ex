@@ -1,13 +1,13 @@
 defmodule ExBuffer do
   @moduledoc """
-  An ExBuffer is a process that maintains a collection of items and flushes
+  An `ExBuffer` is a process that maintains a collection of items and flushes
   them once certain conditions have been met.
 
-  ExBuffers can flush based on a timeout, a maximum length (item count), a
+  An `ExBuffer` can flush based on a timeout, a maximum length (item count), a
   maximum byte size, or a combination of the three. When multiple conditions are
-  used, the ExBuffer will flush when the **first** condition is met.
+  used, the `ExBuffer` will flush when the **first** condition is met.
 
-  ExBuffers also come with a number of helpful tools for testing and debugging.
+  `ExBuffer` also includes a number of helpful tools for testing and debugging.
   """
 
   ################################
@@ -15,13 +15,13 @@ defmodule ExBuffer do
   ################################
 
   @doc """
-  Invoked to flush an ExBuffer.
+  Invoked to flush an `ExBuffer`.
 
-  The first argument (`data`) is a list of items inserted into the ExBuffer and the
+  The first argument (`data`) is a list of items inserted into the `ExBuffer` and the
   second argument (`opts`) is a keyword list of flush options. See the `:flush_callback`
   and `:flush_meta` options for `ExBuffer.start_link/2` for more information.
 
-  This callback can return any term as the return value is disregarded by the ExBuffer.
+  This callback can return any term as the return value is disregarded by the `ExBuffer`.
 
   This callback is required.
   """
@@ -30,7 +30,7 @@ defmodule ExBuffer do
   @doc """
   Invoked to determine the size of an inserted item.
 
-  The only argument (`item`) is any term that was inserted into the ExBuffer.
+  The only argument (`item`) is any term that was inserted into the `ExBuffer`.
 
   This callback must return a non-negative integer representing the item's byte size.
 
@@ -44,7 +44,7 @@ defmodule ExBuffer do
   # Types
   ################################
 
-  @typedoc "Errors returned by ExBuffer functions"
+  @typedoc "Errors returned by `ExBuffer` functions"
   @type error :: :invalid_callback | :invalid_limit
 
   ################################
@@ -74,36 +74,36 @@ defmodule ExBuffer do
 
   ## Options
 
-  An ExBuffer can be started with the following options:
+  An `ExBuffer` can be started with the following options:
 
     * `:flush_callback` - The function that will be invoked to handle a flush.
       This function should expect two parameters: a list of items and a keyword
       list of flush opts. The flush opts include the size and length of the buffer
       at the time of the flush and optionally include any provided metadata (see
       `:flush_meta` for more information). This function can return any term as the
-      return value is not used by the ExBuffer. (Required)
+      return value is not used by the `ExBuffer`. (Required)
 
     * `:buffer_timeout` - A non-negative integer representing the maximum time
-      (in ms) allowed between flushes of the ExBuffer. Once this amount of time
-      has passed, the ExBuffer will be flushed. By default, an ExBuffer does not
+      (in ms) allowed between flushes of the `ExBuffer`. Once this amount of time
+      has passed, the `ExBuffer` will be flushed. By default, an `ExBuffer` does not
       have a timeout. (Optional)
 
     * `:flush_meta` - A term to be included in the flush opts under the `meta` key.
       By default, this value will be `nil`. (Optional)
 
     * `:max_length` - A non-negative integer representing the maximum allowed
-      length (item count) of the ExBuffer. Once the limit is hit, the ExBuffer will
-      be flushed. By default, an ExBuffer does not have a max length. (Optional)
+      length (item count) of the `ExBuffer`. Once the limit is hit, the `ExBuffer` will
+      be flushed. By default, an `ExBuffer` does not have a max length. (Optional)
 
     * `:max_size` - A non-negative integer representing the maximum allowed size
-      (in bytes) of the ExBuffer. Once the limit is hit (or exceeded), the ExBuffer
+      (in bytes) of the `ExBuffer`. Once the limit is hit (or exceeded), the `ExBuffer`
       will be flushed. The `:size_callback` option determines how item size is
-      computed. By default, an ExBuffer does not have a max size. (Optional)
+      computed. By default, an `ExBuffer` does not have a max size. (Optional)
 
     * `:size_callback` - The function that will be invoked to determine the size
       of an item. This function should expect a single parameter representing an
       item and should return a single non-negative integer representing that item's
-      byte size. By default, an ExBuffer's size callback is `Kernel.byte_size/1`
+      byte size. The default `ExBuffer` size callback is `Kernel.byte_size/1`
       (`:erlang.term_to_binary/1` is used to convert non-bitstring inputs to binary
       if necessary). (Optional)
 
@@ -116,14 +116,14 @@ defmodule ExBuffer do
   end
 
   @doc """
-  Lazily chunks an enumerable based on ExBuffer flush conditions.
+  Lazily chunks an enumerable based on `ExBuffer` flush conditions.
 
   This function currently supports length and size conditions. If multiple
   conditions are specified, a chunk is emitted once the **first** condition is
-  met (just like an ExBuffer process).
+  met (just like an `ExBuffer` process).
 
   While this function is useful in it's own right, it's included primarily as
-  another way to synchronously test applications that use ExBuffer.
+  another way to synchronously test applications that use `ExBuffer`.
 
   ## Options
 
@@ -167,7 +167,7 @@ defmodule ExBuffer do
   defdelegate chunk(enum, opts \\ []), to: ExBuffer.Buffer.Stream
 
   @doc """
-  Lazily chunks an enumerable based on ExBuffer flush conditions and raises an `ArgumentError`
+  Lazily chunks an enumerable based on `ExBuffer` flush conditions and raises an `ArgumentError`
   with invalid options.
 
   For more information on this function's usage, purpose, and options, see `ExBuffer.chunk!/2`.
@@ -216,7 +216,7 @@ defmodule ExBuffer do
 
   ## Options
 
-  An ExBuffer can be flushed with the following options:
+  An `ExBuffer` can be flushed with the following options:
 
     * `:async` - A boolean representing whether or not the flush will be asynchronous.
       By default, this value is `true`. (Optional)
@@ -261,9 +261,9 @@ defmodule ExBuffer do
   defdelegate length(buffer), to: ExBuffer.Buffer.Server
 
   @doc """
-  Returns the time (in ms) before the next scheduled flush.
+  Returns the time (in ms) before the next scheduled flush of the given `ExBuffer`.
 
-  If the given ExBuffer does not have a timeout, this function returns `nil`.
+  If the given `ExBuffer` does not have a timeout, this function returns `nil`.
 
   While this functionality may occasionally be desriable in a production environment,
   it is intended to be used primarily for testing and debugging.
