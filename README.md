@@ -13,7 +13,7 @@ This package can be installed by adding `:ex_buffer` to your list of dependencie
 ```elixir
 def deps do
   [
-    {:ex_buffer "~> 0.2.1"}
+    {:ex_buffer "~> 0.3.0"}
   ]
 end
 ```
@@ -27,7 +27,11 @@ For additional documentation, see [HexDocs](https://hexdocs.pm/ex_buffer/readme.
 We can easily start an ExBuffer by adding it directly to a supervision tree.
 
 ```elixir
-opts = [callback: &IO.inspect/1, max_length: 3, name: :buffer]
+opts = [
+  flush_callback: fn data, _ -> IO.inspect(data) end,
+  max_length: 3,
+  name: :buffer
+]
 
 children = [
   {ExBuffer, opts}
