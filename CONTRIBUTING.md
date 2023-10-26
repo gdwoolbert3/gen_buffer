@@ -4,8 +4,8 @@ Suggestions, Issues, and pull requests are welcome!
 
 ## Setup
 
-Realisitcally, this project will likely run fine on any relatively modern Erlang/Elixir version but
-this project specifies the following Erlang and Elixir versions (see `.tool-versions`):
+Realisitcally, this project will likely run fine on any relatively modern Erlang/Elixir version, but
+this project specifies the following language versions (see `.tool-versions`):
 
 * Erlang OTP 25.1.2
 * Elixir 1.14.2
@@ -38,9 +38,9 @@ mix test
 
 1. Ensure that your code is well-formatted and that all unit tests are passing (there is a GitHub workflow
    that checks both).
-2. Ensure that any new functionality is well-documented in the function/module docs as well as in the
-   README.md (if applicable).
-3. Increase any relevant version numbers if applicable. This library uses semantic versioning
+2. Ensure that any new functionality is well-documented in the function/module docs as well as in `README.md`
+   (if applicable).
+3. Increase any relevant version numbers if applicable. This project uses semantic versioning
    ([SemVer](http://semver.org/)).
 4. Pull Requests require merge approval from a code owner (enforced by GitHub).
 
