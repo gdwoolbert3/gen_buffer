@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
 * Split code back into multiple modules to simplify feature addition.
 * Reorganized unit tests.
 
+### Links
+
+* [GitHub](https://github.com/gdwoolbert3/ex_buffer/releases/tag/v0.3.0)
+
 ## [0.2.1] - 2023-10-24
 
 ### Changed
@@ -23,6 +27,7 @@ All notable changes to this project will be documented in this file.
 ### Links
 
 * [GitHub](https://github.com/gdwoolbert3/ex_buffer/releases/tag/v0.2.1)
+* [HexDocs](https://hexdocs.pm/ex_buffer/0.2.1/readme.html)
  
 ## [0.2.0] - 2023-10-23
 
