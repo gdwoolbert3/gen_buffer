@@ -51,6 +51,8 @@ ExBuffer.insert(:buffer, "baz")
 
 ## Example
 
+TODO(Gordon) - Update existing example (no meta) and add behavior example
+
 `ExBuffer` is designed to be customizable, allowing it to be used in any number of scenarios. For example, we can
 use it in conjunction with Elixir's `PartitionSupervisor` to easily create a partitioned buffer with dynamic flush
 behavior.

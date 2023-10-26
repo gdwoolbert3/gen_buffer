@@ -8,6 +8,7 @@ defmodule ExBuffer.MixProject do
       app: :ex_buffer,
       version: @version,
       elixir: "~> 1.14",
+      elixirc_paths: elixirc_paths(Mix.env()),
       dialyzer: dialyzer(),
       start_permanent: Mix.env() == :prod,
       description: description(),
@@ -26,6 +27,9 @@ defmodule ExBuffer.MixProject do
       extra_applications: [:logger]
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 
   defp dialyzer do
     [

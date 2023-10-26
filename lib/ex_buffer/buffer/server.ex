@@ -13,7 +13,7 @@ defmodule ExBuffer.Buffer.Server do
 
   @doc false
   @spec start_link(keyword()) :: GenServer.on_start()
-  def start_link(opts \\ []) do
+  def start_link(opts) do
     {opts, server_opts} = Keyword.split(opts, @fields)
     GenServer.start_link(__MODULE__, opts, server_opts)
   end

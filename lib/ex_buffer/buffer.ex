@@ -24,6 +24,10 @@ defmodule ExBuffer.Buffer do
   ################################
 
   @doc false
+  @spec flush_callback_arity :: non_neg_integer()
+  def flush_callback_arity, do: @flush_callback_arity
+
+  @doc false
   @spec insert(t(), term()) :: {:flush, t()} | {:cont, t()}
   def insert(buffer, item) do
     buffer = %{
@@ -66,6 +70,10 @@ defmodule ExBuffer.Buffer do
   def refresh(buffer, timer \\ nil) do
     %{buffer | buffer: [], length: 0, size: 0, timer: timer}
   end
+
+  @doc false
+  @spec size_callback_arity :: non_neg_integer()
+  def size_callback_arity, do: @size_callback_arity
 
   ################################
   # Private API
