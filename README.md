@@ -103,8 +103,8 @@ Buffer.insert("baz")
 
 ### Partitioned Buffer
 
-Alternatively, we can use `ExBuffer` in conjunction with Elixir's `PartitionSupervisor` to easily create a 
-partitioned buffer with dynamic flush behavior.
+Alternatively, we could also use `ExBuffer` in conjunction with Elixir's `PartitionSupervisor` to easily
+create a partitioned buffer with dynamic flush behavior.
 
 ```elixir
 defmodule PartitionedBuffer do
