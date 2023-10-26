@@ -10,6 +10,9 @@ defmodule ExBuffer do
   `ExBuffer` also includes a number of helpful tools for testing and debugging.
   """
 
+  alias ExBuffer.Buffer
+  alias ExBuffer.Buffer.{Server, Stream}
+
   ################################
   # Callbacks
   ################################
@@ -112,7 +115,7 @@ defmodule ExBuffer do
   @spec start_link(module() | nil, keyword()) :: GenServer.on_start()
   def start_link(module \\ nil, opts) do
     opts = maybe_update_opts(module, opts)
-    ExBuffer.Buffer.Server.start_link(opts)
+    Server.start_link(opts)
   end
 
   @doc """
@@ -164,7 +167,7 @@ defmodule ExBuffer do
       {:error, :invalid_limit}
   """
   @spec chunk(Enumerable.t(), keyword()) :: {:ok, Enumerable.t()} | {:error, error()}
-  defdelegate chunk(enum, opts \\ []), to: ExBuffer.Buffer.Stream
+  defdelegate chunk(enum, opts \\ []), to: Stream
 
   @doc """
   Lazily chunks an enumerable based on `ExBuffer` flush conditions and raises an `ArgumentError`
@@ -188,7 +191,7 @@ defmodule ExBuffer do
       ** (ArgumentError) invalid limit
   """
   @spec chunk!(Enumerable.t(), keyword()) :: Enumerable.t()
-  defdelegate chunk!(enum, opts \\ []), to: ExBuffer.Buffer.Stream
+  defdelegate chunk!(enum, opts \\ []), to: Stream
 
   @doc """
   Dumps the contents of the given `ExBuffer` to a list, bypassing a flush
@@ -205,7 +208,7 @@ defmodule ExBuffer do
       ["foo", "bar"]
   """
   @spec dump(GenServer.server()) :: list()
-  defdelegate dump(buffer), to: ExBuffer.Buffer.Server
+  defdelegate dump(buffer), to: Server
 
   @doc """
   Flushes the given `ExBuffer`, regardless of whether or not the flush conditions
@@ -231,7 +234,7 @@ defmodule ExBuffer do
       :ok
   """
   @spec flush(GenServer.server(), keyword()) :: :ok
-  defdelegate flush(buffer, opts \\ []), to: ExBuffer.Buffer.Server
+  defdelegate flush(buffer, opts \\ []), to: Server
 
   @doc """
   Inserts the given item into the given `ExBuffer`.
@@ -242,7 +245,7 @@ defmodule ExBuffer do
       :ok
   """
   @spec insert(GenServer.server(), term()) :: :ok
-  defdelegate insert(buffer, item), to: ExBuffer.Buffer.Server
+  defdelegate insert(buffer, item), to: Server
 
   @doc """
   Returns the length (item count) of the given `ExBuffer`.
@@ -258,7 +261,7 @@ defmodule ExBuffer do
       2
   """
   @spec length(GenServer.server()) :: non_neg_integer()
-  defdelegate length(buffer), to: ExBuffer.Buffer.Server
+  defdelegate length(buffer), to: Server
 
   @doc """
   Returns the time (in ms) before the next scheduled flush of the given `ExBuffer`.
@@ -277,7 +280,7 @@ defmodule ExBuffer do
       true
   """
   @spec next_flush(GenServer.server()) :: non_neg_integer() | nil
-  defdelegate next_flush(buffer), to: ExBuffer.Buffer.Server
+  defdelegate next_flush(buffer), to: Server
 
   @doc """
   Retuns the size (in bytes) of the given `ExBuffer`.
@@ -295,7 +298,7 @@ defmodule ExBuffer do
       6
   """
   @spec size(GenServer.server()) :: non_neg_integer()
-  defdelegate size(buffer), to: ExBuffer.Buffer.Server
+  defdelegate size(buffer), to: Server
 
   @doc false
   @spec __using__(keyword()) :: Macro.t()
@@ -333,7 +336,7 @@ defmodule ExBuffer do
   end
 
   defp maybe_update_flush_callback(opts, module) do
-    arity = ExBuffer.Buffer.flush_callback_arity()
+    arity = Buffer.flush_callback_arity()
 
     if function_exported?(module, :handle_flush, arity) do
       Keyword.put(opts, :flush_callback, &module.handle_flush/2)
@@ -343,7 +346,7 @@ defmodule ExBuffer do
   end
 
   defp maybe_update_size_callback(opts, module) do
-    arity = ExBuffer.Buffer.size_callback_arity()
+    arity = Buffer.size_callback_arity()
 
     if function_exported?(module, :handle_size, arity) do
       Keyword.put(opts, :size_callback, &module.handle_size/1)
