@@ -38,7 +38,7 @@ defmodule ExBuffer do
   This callback must return a non-negative integer representing the item's byte size.
 
   This callback is optional. See the `:size_callback` option for `ExBuffer.start_link/2`
-  for more information on the default implementation.
+  for information about the default implementation.
   """
   @callback handle_size(item :: term()) :: non_neg_integer()
   @optional_callbacks handle_size: 1
@@ -47,7 +47,7 @@ defmodule ExBuffer do
   # Types
   ################################
 
-  @typedoc "Errors returned by `ExBuffer` functions"
+  @typedoc "Errors returned by `ExBuffer` functions."
   @type error :: :invalid_callback | :invalid_limit
 
   ################################
