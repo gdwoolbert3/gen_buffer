@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 * Added an `ExBuffer` behaviour.
-* Added a non-banged version of `ExBuffer.chunk!/2`
+* Added a non-banged version of `ExBuffer.chunk!/2`.
 
 ### Changed
 
