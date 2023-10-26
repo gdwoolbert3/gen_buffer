@@ -151,7 +151,7 @@ defmodule ExBuffer do
   > This function is optimized for chunking by either size or size **and** count. Any other
   > chunking strategy can likely be achieved in a more efficient way using other methods.
 
-  ## Example
+  ## Examples
 
       iex> enum = ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
       ...> {:ok, enum} = ExBuffer.chunk(enum, max_length: 3, max_size: 10)
@@ -175,7 +175,7 @@ defmodule ExBuffer do
 
   For more information on this function's usage, purpose, and options, see `ExBuffer.chunk!/2`.
 
-  ## Example
+  ## Examples
 
       iex> ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
       ...> |> ExBuffer.chunk!(max_length: 3, max_size: 10)
