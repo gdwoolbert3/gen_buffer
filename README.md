@@ -126,7 +126,8 @@ defmodule PartitionedBuffer do
       child_spec: {ExBuffer, opts},
       partitions: 2,
       with_arguments: fn [opts], part ->
-        [Keyword.put(opts, :flush_callback, fn data, _ -> handle_flush(data, part) end)]
+        flush_callback = fn data, _ -> handle_flush(data, part) end
+        [Keyword.put(opts, :flush_callback, flush_callback)]
       end
     ]
 
