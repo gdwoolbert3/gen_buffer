@@ -22,7 +22,7 @@ defmodule ExBuffer.TestBuffer do
   @spec handle_flush(list(), keyword()) :: :ok
   def handle_flush(data, opts) do
     pid = Keyword.get(opts, :meta)
-    send(pid, {:test_buffer, data, opts})
+    send(pid, {:impl_mod, data, opts})
     :ok
   end
 
