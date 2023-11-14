@@ -286,7 +286,16 @@ defmodule ExBuffer do
     end
   end
 
-  # TODO(Gordon) - insert batch function
+  @doc """
+  TODO(Gordon) - add this
+  """
+  @spec insert_batch(GenServer.server(), Enumerable.t()) :: term()
+  def insert_batch(buffer, items) do
+    # TODO(Gordon) - add support for specifying partition here
+    with {:ok, {partitioner, _}} <- fetch_buffer(buffer) do
+      do_insert_batch(buffer, partitioner, items)
+    end
+  end
 
   @doc false
   @spec __using__(keyword()) :: Macro.t()
@@ -449,19 +458,25 @@ defmodule ExBuffer do
     |> Server.info()
   end
 
-  defp buffer_partition_name(buffer, partition) do
-    {:via, PartitionSupervisor, {buffer, partition}}
-  end
-
   defp do_insert(buffer, :unpartitioned, item), do: Server.insert(buffer, item)
 
   defp do_insert(buffer, partitioner, item) do
     buffer
-    |> buffer_partition(partitioner.())
+    |> buffer_partition_name(partitioner.())
     |> Server.insert(item)
   end
 
-  defp buffer_partition(buffer, partition) do
+  defp do_insert_batch(buffer, :unpartitioned, items) do
+    Server.insert_batch(buffer, items)
+  end
+
+  defp do_insert_batch(buffer, partitioner, items) do
+    buffer
+    |> buffer_partition_name(partitioner.())
+    |> Server.insert_batch(items)
+  end
+
+  defp buffer_partition_name(buffer, partition) do
     {:via, PartitionSupervisor, {buffer, partition}}
   end
 end

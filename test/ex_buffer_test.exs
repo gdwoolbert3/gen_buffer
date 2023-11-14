@@ -4,6 +4,8 @@ defmodule ExBufferTest do
 
   import ExBuffer.Helpers
 
+  # TODO(Gordon) - update "describe" for tests
+
   setup %{test_type: test_type} do
     if test_type == :doctest do
       opts = [name: :buffer, flush_callback: fn _, _ -> :ok end, buffer_timeout: 5_000]
@@ -412,6 +414,35 @@ defmodule ExBufferTest do
 
     test "will return an error with an invalid buffer" do
       assert ExBuffer.insert(:fake_buffer, "foo") == {:error, :not_found}
+    end
+  end
+
+  describe "insert_batch/2" do
+    test "will insert a batch of items into an unpartitioned ExBuffer" do
+      items = ["foo", "bar", "baz"]
+
+      assert {:ok, buffer} = start_ex_buffer()
+      assert ExBuffer.insert_batch(buffer, items) == :ok
+      assert ExBuffer.dump(buffer) == {:ok, ["foo", "bar", "baz"]}
+    end
+
+    test "will insert a batch of items into a partitioned ExBuffer" do
+      opts = [partitions: 2]
+      items = ["foo", "bar", "baz"]
+
+      assert {:ok, buffer} = start_ex_buffer(opts)
+      assert ExBuffer.insert_batch(buffer, items) == :ok
+      assert ExBuffer.dump(buffer, partition: 0) == {:ok, ["foo", "bar", "baz"]}
+    end
+
+    test "will flush an ExBuffer while inserting a batch of items" do
+      opts = [max_length: 2]
+      items = ["foo", "bar", "baz"]
+
+      assert {:ok, buffer} = start_ex_buffer(opts)
+      assert ExBuffer.insert_batch(buffer, items) == :ok
+      assert_receive {^buffer, ["foo", "bar"], _}
+      assert ExBuffer.dump(buffer) == {:ok, ["baz"]}
     end
   end
 end

@@ -49,6 +49,10 @@ defmodule ExBuffer.Buffer.Server do
   @spec insert(GenServer.server(), term()) :: :ok
   def insert(buffer, item), do: GenServer.call(buffer, {:insert, item})
 
+  @doc false
+  @spec insert_batch(GenServer.server(), Enumerable.t()) :: :ok
+  def insert_batch(buffer, items), do: GenServer.call(buffer, {:insert_batch, items})
+
   ################################
   # GenServer Callbacks
   ################################
@@ -85,6 +89,10 @@ defmodule ExBuffer.Buffer.Server do
     end
   end
 
+  def handle_call({:insert_batch, items}, _from, buffer) do
+    {:reply, :ok, do_insert_batch(buffer, items)}
+  end
+
   def handle_call(:sync_flush, _from, buffer) do
     do_flush(buffer)
     {:reply, :ok, buffer, {:continue, :refresh}}
@@ -114,7 +122,6 @@ defmodule ExBuffer.Buffer.Server do
   @doc false
   @impl GenServer
   @spec terminate(term(), Buffer.t()) :: term()
-  def terminate(reason, _) when reason in [:invalid_callback, :invalid_limit], do: :ok
   def terminate(_, buffer), do: do_flush(buffer)
 
   ################################
@@ -126,6 +133,31 @@ defmodule ExBuffer.Buffer.Server do
       nil -> {:error, :invalid_callback}
       _ -> Buffer.new(opts)
     end
+  end
+
+  defp build_info(buffer) do
+    %{
+      length: buffer.length,
+      max_length: buffer.max_length,
+      max_size: buffer.max_size,
+      next_flush: get_next_flush(buffer),
+      partition: buffer.partition,
+      size: buffer.size,
+      timeout: buffer.timeout
+    }
+  end
+
+  defp do_insert_batch(buffer, items) do
+    Enum.reduce(items, buffer, fn item, acc ->
+      case Buffer.insert(acc, item) do
+        {:flush, acc} ->
+          do_flush(acc)
+          refresh(acc)
+
+        {:cont, acc} ->
+          acc
+      end
+    end)
   end
 
   defp refresh(%Buffer{timeout: :infinity} = buffer), do: Buffer.refresh(buffer)
@@ -143,18 +175,6 @@ defmodule ExBuffer.Buffer.Server do
     # We use `:erlang.start_timer/3` to include the timer ref in the message. This is necessary
     # for handling race conditions resulting from multiple simultaneous flush conditions.
     :erlang.start_timer(buffer.timeout, self(), :flush)
-  end
-
-  defp build_info(buffer) do
-    %{
-      length: buffer.length,
-      max_length: buffer.max_length,
-      max_size: buffer.max_size,
-      next_flush: get_next_flush(buffer),
-      partition: buffer.partition,
-      size: buffer.size,
-      timeout: buffer.timeout
-    }
   end
 
   defp get_next_flush(%Buffer{timer: nil}), do: nil
