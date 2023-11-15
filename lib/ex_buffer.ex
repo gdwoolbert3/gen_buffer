@@ -292,6 +292,7 @@ defmodule ExBuffer do
   @spec insert_batch(GenServer.server(), Enumerable.t()) :: term()
   def insert_batch(buffer, items) do
     # TODO(Gordon) - add support for specifying partition here
+    # TODO(Gordon) - Add support for "unsafe" flush?
     with {:ok, {partitioner, _}} <- fetch_buffer(buffer) do
       do_insert_batch(buffer, partitioner, items)
     end
