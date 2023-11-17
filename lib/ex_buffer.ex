@@ -87,13 +87,17 @@ defmodule ExBuffer do
       `:flush_meta` for more information). This function can return any term as the
       return value is not used by the `ExBuffer`. (Required)
 
-    * `:buffer_timeout` - A non-negative integer representing the maximum time
+    * `ExBuffer_timeout` - A non-negative integer representing the maximum time
       (in ms) allowed between flushes of the `ExBuffer`. Once this amount of time
       has passed, the `ExBuffer` will be flushed. By default, an `ExBuffer` does not
       have a timeout. (Optional)
 
     * `:flush_meta` - A term to be included in the flush opts under the `meta` key.
       By default, this value will be `nil`. (Optional)
+
+    * `:jitter_rate` - A float between 0 and 1 that is used to offset the limits of
+      `ExBuffer` partitions. Limits are decreased by a random rate between 0 and this
+      value. By default, no jitter is applied to an `ExBuffer`.
 
     * `:max_length` - A non-negative integer representing the maximum allowed
       length (item count) of the `ExBuffer`. Once the limit is hit, the `ExBuffer` will
@@ -103,6 +107,18 @@ defmodule ExBuffer do
       (in bytes) of the `ExBuffer`. Once the limit is hit (or exceeded), the `ExBuffer`
       will be flushed. The `:size_callback` option determines how item size is
       computed. By default, an `ExBuffer` does not have a max size. (Optional)
+
+    * `:name` - The registered name for the `ExBuffer`. This must be either an atom or a
+      `:via` tuple. By default (when an implementation module is not used), the name of an
+      `ExBuffer` is `ExBuffer`. (Optional)
+
+    * `:partitioner` - The strategy for assigning items to a partition. The partitioner
+      can be either `:rotating` or `:random`. The former assigns items to partitions in a
+      round-robin fashion and the latter assigns items randomly. By default, an `ExBuffer`
+      uses a `:rotating` partition. (Optional)
+
+    * `:partitions` - The number of partitions for the `ExBuffer`. By default, an `ExBuffer`
+      has 1 partition. (Optional)
 
     * `:size_callback` - The function that will be invoked to determine the size
       of an item. This function should expect a single parameter representing an
@@ -119,14 +135,10 @@ defmodule ExBuffer do
 
     with {:ok, partitions} <- validate_partitions(opts),
          {:ok, partitioner} <- validate_partitioner(opts),
-         {:ok, _} = result <- do_start_link(partitions, opts) do
+         {:ok, _} = result <- do_start_link(opts) do
       partitioner = build_partitioner(partitions, partitioner)
-
-      opts
-      |> Keyword.get(:name)
-      |> build_key()
-      |> :persistent_term.put({partitioner, partitions})
-
+      name = Keyword.get(opts, :name)
+      put_buffer(name, partitioner, partitions)
       result
     end
   end
@@ -213,18 +225,37 @@ defmodule ExBuffer do
   While this functionality may occasionally be desriable in a production environment,
   it is intended to be used primarily for testing and debugging.
 
-  ## Example
+  ## Options
 
-      iex> ExBuffer.insert(:buffer, "foo")
-      iex> ExBuffer.insert(:buffer, "bar")
-      iex> ExBuffer.dump(:buffer)
-      ["foo", "bar"]
+  An `ExBuffer` can be dumped with the following options:
+
+    * `:partition` - A non-negative integer representing the specific partition index to
+      dump. By default, this function dumps all partitions and concatenates the results
+      together. (Optional)
+
+  ## Examples
+
+      iex> ExBuffer.insert(ExBuffer, "foo")
+      iex> ExBuffer.insert(ExBuffer, "bar")
+      iex> ExBuffer.dump(ExBuffer)
+      {:ok, ["foo", "bar"]}
+
+      iex> ExBuffer.insert(ExBuffer, "foo")
+      iex> ExBuffer.insert(ExBuffer, "bar")
+      iex> ExBuffer.dump(ExBuffer, partition: 0)
+      {:ok, ["foo"]}
   """
-  @spec dump(GenServer.server(), keyword()) :: term()
+  @spec dump(PartitionSupervisor.name(), keyword()) ::
+          {:ok, list()} | {:error, :invalid_partition | :not_found}
   def dump(buffer, opts \\ []) do
-    with {:ok, {_, partitions}} <- fetch_buffer(buffer),
-         {:ok, partition} <- validate_partition(opts, partitions) do
-      {:ok, do_dump(buffer, partitions, partition)}
+    with {:ok, {_, parts}} <- fetch_buffer(buffer),
+         {:ok, part} <- validate_partition(opts, parts) do
+      fun = &Server.dump/1
+
+      case part do
+        :all -> {:ok, Enum.reduce(1..parts, [], &(&2 ++ do_part(buffer, &1 - 1, fun)))}
+        part -> {:ok, do_part(buffer, part, fun)}
+      end
     end
   end
 
@@ -242,59 +273,140 @@ defmodule ExBuffer do
     * `:async` - A boolean representing whether or not the flush will be asynchronous.
       By default, this value is `true`. (Optional)
 
+    * `:partition` - A non-negative integer representing the specific partition index to
+      flush. By default, this function flushes all partitions. (Optional)
+
   ## Example
 
-      iex> ExBuffer.insert(:buffer, "foo")
-      iex> ExBuffer.insert(:buffer, "bar")
+      iex> ExBuffer.insert(ExBuffer, "foo")
+      iex> ExBuffer.insert(ExBuffer, "bar")
       ...>
-      ...> # Invokes callback on ["foo", "bar"]
-      iex> ExBuffer.flush(:buffer)
+      ...> # Invokes flush callback on ["foo"] and then on ["bar"]
+      iex> ExBuffer.flush(ExBuffer)
+      :ok
+
+      iex> ExBuffer.insert(ExBuffer, "foo")
+      iex> ExBuffer.insert(ExBuffer, "bar")
+      ...>
+      ...> # Invokes flush callback on ["foo"]
+      iex> ExBuffer.flush(ExBuffer, partition: 0)
       :ok
   """
-  @spec flush(GenServer.server(), keyword()) :: term()
+  @spec flush(GenServer.server(), keyword()) :: :ok | {:error, :invalid_partition | :not_found}
   def flush(buffer, opts \\ []) do
-    with {:ok, {_, partitions}} <- fetch_buffer(buffer),
-         {:ok, partition} <- validate_partition(opts, partitions) do
-      do_flush(buffer, partitions, partition, opts)
+    with {:ok, {_, parts}} <- fetch_buffer(buffer),
+         {:ok, part} <- validate_partition(opts, parts) do
+      fun = &Server.flush(&1, opts)
+
+      case part do
+        :all -> Enum.each(1..parts, &do_part(buffer, &1 - 1, fun))
+        part -> do_part(buffer, part, fun)
+      end
     end
   end
 
   @doc """
-  TODO(Gordon) - Add this
+  Returns information about the given `ExBuffer`.
+
+  This function returns a map per partition with the following keys:
+
+    * `:length` - The number of items in the `ExBuffer` partition.
+
+    * `:max_length` - The maximum length of the `ExBuffer` partition after applying the
+      `:jitter_rate`.
+
+    * `:max_size` - the maximum byte-size of the `ExBuffer` partition after applying the
+      `:jitter_rate`.
+
+    * `:next_flush` - The amount of time (in ms) until the next scheduled flush of the
+      `ExBuffer` partition (or `nil` if the `ExBuffer` was started without a time limit).
+
+    * `:partition` - The index of the `ExBuffer` partition.
+
+    * `:size` - The byte-size of the `ExBuffer` partition.
+
+    * `:timeout` - The maximum amount of time (in ms) allowed between flushes of the
+      `ExBuffer` partition after applying the `:jitter_rate`.
+
+  While this functionality may occasionally be desriable in a production environment,
+  it is intended to be used primarily for testing and debugging.
+
+  ## Options
+
+  The information about an `ExBuffer` can be retrieved with the following options:
+
+    * `:partition` - A non-negative integer representing the specific partition index to
+      retrieve information for. By default, this function retrieves information fo all partitions.
+      (Optional)
+
+  ## Examples
+
+      iex> ExBuffer.insert(ExBuffer, "foo")
+      iex> {:ok, [%{length: length}, %{}]} = ExBuffer.info(ExBuffer)
+      iex> length
+      1
+
+      iex> ExBuffer.insert(ExBuffer, "foo")
+      iex> {:ok, [%{length: length, partition: 0}]} = ExBuffer.info(ExBuffer, partition: 0)
+      iex> length
+      1
   """
-  @spec info(GenServer.server(), keyword()) :: term()
+  @spec info(GenServer.server(), keyword()) ::
+          {:ok, list()} | {:error, :invalid_partition | :not_found}
   def info(buffer, opts \\ []) do
-    with {:ok, {_, partitions}} <- fetch_buffer(buffer),
-         {:ok, partition} <- validate_partition(opts, partitions) do
-      {:ok, do_info(buffer, partitions, partition)}
+    with {:ok, {_, parts}} <- fetch_buffer(buffer),
+         {:ok, part} <- validate_partition(opts, parts) do
+      fun = &Server.info/1
+
+      case part do
+        :all -> {:ok, Enum.map(1..parts, &do_part(buffer, &1 - 1, fun))}
+        part -> {:ok, [do_part(buffer, part, fun)]}
+      end
     end
   end
 
   @doc """
-  Inserts the given item into the given `ExBuffer`.
+  Inserts the given item into the given `ExBuffer` based on the partitioner that
+  the given `ExBuffer` was started with.
 
   ## Example
 
-      iex> ExBuffer.insert(:buffer, "foo")
+      iex> ExBuffer.insert(ExBuffer, "foo")
       :ok
   """
-  @spec insert(GenServer.server(), term()) :: term()
+  @spec insert(GenServer.server(), term()) :: :ok | {:error, :not_found}
   def insert(buffer, item) do
-    # TODO(Gordon) - add support for specifying partition here
     with {:ok, {partitioner, _}} <- fetch_buffer(buffer) do
-      do_insert(buffer, partitioner, item)
+      do_part(buffer, partitioner.(), &Server.insert(&1, item))
     end
   end
 
   @doc """
-  TODO(Gordon) - add this
+  Inserts the given batch of items into the given `ExBuffer` based on the partitioner
+  that the given `ExBuffer` was started with.
+
+  All items in the batch will be inserted into the same partition.
+
+  ## Options
+
+  A batch of items can be inserted into an `ExBuffer` with the following options:
+
+    * `:safe_flush` - A boolean denoting whether or not to flush "safely". By default, this
+      value is `true`, meaning that, if a flush condition is met while inserting items, the
+      `ExBuffer` partition will synchronously flush before continuing to insert items. If
+      this value is `false`, all items will be inserted before checking if any flush
+      conditions have been met. Afterwards, if a flush condition has been met, the `ExBuffer`
+      partition will be flushed asynchronously.
+
+  ## Example
+
+      iex> ExBuffer.insert(ExBuffer, ["foo", "bar", "baz"])
+      :ok
   """
-  @spec insert_batch(GenServer.server(), Enumerable.t()) :: term()
-  def insert_batch(buffer, items) do
-    # TODO(Gordon) - add support for specifying partition here
-    # TODO(Gordon) - Add support for "unsafe" flush?
+  @spec insert_batch(GenServer.server(), Enumerable.t(), keyword()) :: :ok | {:error, :not_found}
+  def insert_batch(buffer, items, opts \\ []) do
     with {:ok, {partitioner, _}} <- fetch_buffer(buffer) do
-      do_insert_batch(buffer, partitioner, items)
+      do_part(buffer, partitioner.(), &Server.insert_batch(&1, items, opts))
     end
   end
 
@@ -372,9 +484,7 @@ defmodule ExBuffer do
     end
   end
 
-  defp do_start_link(1, opts), do: Server.start_link(opts)
-
-  defp do_start_link(_, opts) do
+  defp do_start_link(opts) do
     {sup_opts, buffer_opts} = Keyword.split(opts, @supervisor_fields)
     with_args = fn [opts], part -> [Keyword.put(opts, :partition, part)] end
     child_spec = {Server, buffer_opts}
@@ -384,7 +494,7 @@ defmodule ExBuffer do
     |> PartitionSupervisor.start_link()
   end
 
-  defp build_partitioner(1, _), do: :unpartitioned
+  defp build_partitioner(1, _), do: fn -> 0 end
 
   defp build_partitioner(partitions, :random) do
     fn -> :rand.uniform(partitions) - 1 end
@@ -405,79 +515,31 @@ defmodule ExBuffer do
     end
   end
 
+  defp put_buffer(buffer, partitioner, partitions) do
+    buffer
+    |> build_key()
+    |> :persistent_term.put({partitioner, partitions})
+  end
+
   defp fetch_buffer(buffer) do
     buffer
     |> build_key()
     |> :persistent_term.get(nil)
     |> case do
       nil -> {:error, :not_found}
-      partitioner -> {:ok, partitioner}
+      buffer -> {:ok, buffer}
     end
   end
 
   defp build_key(buffer), do: {__MODULE__, buffer}
 
-  defp do_dump(buffer, 1, _), do: Server.dump(buffer)
-
-  defp do_dump(buffer, partitions, :all) do
-    Enum.reduce(1..partitions, [], &(&2 ++ do_dump_partition(buffer, &1 - 1)))
-  end
-
-  defp do_dump(buffer, _, partition), do: do_dump_partition(buffer, partition)
-
-  defp do_dump_partition(buffer, partition) do
+  defp do_part(buffer, partition, fun) do
     buffer
-    |> buffer_partition_name(partition)
-    |> Server.dump()
+    |> partition_name(partition)
+    |> fun.()
   end
 
-  defp do_flush(buffer, 1, _, opts), do: Server.flush(buffer, opts)
-
-  defp do_flush(buffer, partitions, :all, opts) do
-    Enum.each(1..partitions, &do_flush_partition(buffer, &1 - 1, opts))
-  end
-
-  defp do_flush(buffer, _, partition, opts), do: do_flush_partition(buffer, partition, opts)
-
-  defp do_flush_partition(buffer, partition, opts) do
-    buffer
-    |> buffer_partition_name(partition)
-    |> Server.flush(opts)
-  end
-
-  defp do_info(buffer, 1, _), do: [Server.info(buffer)]
-
-  defp do_info(buffer, partitions, :all) do
-    Enum.map(1..partitions, &do_info_partition(buffer, &1 - 1))
-  end
-
-  defp do_info(buffer, _, partition), do: [do_info_partition(buffer, partition)]
-
-  defp do_info_partition(buffer, partition) do
-    buffer
-    |> buffer_partition_name(partition)
-    |> Server.info()
-  end
-
-  defp do_insert(buffer, :unpartitioned, item), do: Server.insert(buffer, item)
-
-  defp do_insert(buffer, partitioner, item) do
-    buffer
-    |> buffer_partition_name(partitioner.())
-    |> Server.insert(item)
-  end
-
-  defp do_insert_batch(buffer, :unpartitioned, items) do
-    Server.insert_batch(buffer, items)
-  end
-
-  defp do_insert_batch(buffer, partitioner, items) do
-    buffer
-    |> buffer_partition_name(partitioner.())
-    |> Server.insert_batch(items)
-  end
-
-  defp buffer_partition_name(buffer, partition) do
+  defp partition_name(buffer, partition) do
     {:via, PartitionSupervisor, {buffer, partition}}
   end
 end

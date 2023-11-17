@@ -1,15 +1,13 @@
 defmodule ExBufferTest do
   use ExUnit.Case, async: true
-  # doctest ExBuffer
+  doctest ExBuffer
 
   import ExBuffer.Helpers
 
-  # TODO(Gordon) - update "describe" for tests
-
   setup %{test_type: test_type} do
     if test_type == :doctest do
-      opts = [name: :buffer, flush_callback: fn _, _ -> :ok end, buffer_timeout: 5_000]
-      if start_ex_buffer(opts) == {:ok, :buffer}, do: :ok
+      opts = [flush_callback: fn _, _ -> :ok end, partitions: 2]
+      if start_ex_buffer(opts) == {:ok, ExBuffer}, do: :ok
     else
       :ok
     end
@@ -95,7 +93,7 @@ defmodule ExBufferTest do
     test "will flush an ExBuffer on termination" do
       assert {:ok, buffer} = start_ex_buffer()
       assert seed_buffer(buffer) == :ok
-      assert GenServer.stop(buffer) == :ok
+      assert PartitionSupervisor.stop(buffer) == :ok
       assert_receive {^buffer, ["foo", "bar", "baz"], _}
     end
   end
@@ -165,7 +163,7 @@ defmodule ExBufferTest do
     end
   end
 
-  describe "dump/1" do
+  describe "dump/2" do
     test "will dump an unpartitioned ExBuffer" do
       assert {:ok, buffer} = start_ex_buffer()
       assert seed_buffer(buffer) == :ok
@@ -201,7 +199,7 @@ defmodule ExBufferTest do
     end
   end
 
-  describe "flush/1" do
+  describe "flush/2" do
     test "will flush an unpartitioned ExBuffer" do
       assert {:ok, buffer} = start_ex_buffer()
       assert seed_buffer(buffer) == :ok
@@ -241,6 +239,16 @@ defmodule ExBufferTest do
       assert seed_buffer(buffer) == :ok
       assert ExBuffer.flush(buffer, async: false) == :ok
       assert_received {^buffer, ["foo", "bar", "baz"], _}
+    end
+
+    test "will include default flush opts" do
+      assert {:ok, buffer} = start_ex_buffer()
+      assert seed_buffer(buffer) == :ok
+      assert ExBuffer.flush(buffer) == :ok
+      assert_receive {^buffer, ["foo", "bar", "baz"], flush_opts}
+      assert Keyword.get(flush_opts, :partition) == 0
+      assert Keyword.get(flush_opts, :length) == 3
+      assert Keyword.get(flush_opts, :size) == 9
     end
 
     test "will include flush meta" do
@@ -417,7 +425,7 @@ defmodule ExBufferTest do
     end
   end
 
-  describe "insert_batch/2" do
+  describe "insert_batch/3" do
     test "will insert a batch of items into an unpartitioned ExBuffer" do
       items = ["foo", "bar", "baz"]
 
@@ -443,6 +451,15 @@ defmodule ExBufferTest do
       assert ExBuffer.insert_batch(buffer, items) == :ok
       assert_receive {^buffer, ["foo", "bar"], _}
       assert ExBuffer.dump(buffer) == {:ok, ["baz"]}
+    end
+
+    test "will flush an ExBuffer unsafely" do
+      opts = [max_length: 2]
+      items = ["foo", "bar", "baz"]
+
+      assert {:ok, buffer} = start_ex_buffer(opts)
+      assert ExBuffer.insert_batch(buffer, items, safe_flush: false) == :ok
+      assert_receive {^buffer, ["foo", "bar", "baz"], _}
     end
   end
 end

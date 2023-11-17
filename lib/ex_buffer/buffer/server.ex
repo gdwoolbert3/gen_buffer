@@ -50,8 +50,14 @@ defmodule ExBuffer.Buffer.Server do
   def insert(buffer, item), do: GenServer.call(buffer, {:insert, item})
 
   @doc false
-  @spec insert_batch(GenServer.server(), Enumerable.t()) :: :ok
-  def insert_batch(buffer, items), do: GenServer.call(buffer, {:insert_batch, items})
+  @spec insert_batch(GenServer.server(), Enumerable.t(), keyword()) :: :ok
+  def insert_batch(buffer, items, opts \\ []) do
+    if Keyword.get(opts, :safe_flush, true) do
+      GenServer.call(buffer, {:safe_insert_batch, items})
+    else
+      GenServer.call(buffer, {:unsafe_insert_batch, items})
+    end
+  end
 
   ################################
   # GenServer Callbacks
@@ -61,6 +67,8 @@ defmodule ExBuffer.Buffer.Server do
   @impl GenServer
   @spec init(keyword()) :: {:ok, Buffer.t(), {:continue, :refresh}} | {:stop, ExBuffer.error()}
   def init(opts) do
+    Process.flag(:trap_exit, true)
+
     case init_buffer(opts) do
       {:ok, buffer} -> {:ok, buffer, {:continue, :refresh}}
       {:error, reason} -> {:stop, reason}
@@ -89,8 +97,15 @@ defmodule ExBuffer.Buffer.Server do
     end
   end
 
-  def handle_call({:insert_batch, items}, _from, buffer) do
-    {:reply, :ok, do_insert_batch(buffer, items)}
+  def handle_call({:safe_insert_batch, items}, _from, buffer) do
+    {:reply, :ok, do_safe_insert_batch(buffer, items)}
+  end
+
+  def handle_call({:unsafe_insert_batch, items}, _from, buffer) do
+    case do_unsafe_insert_batch(buffer, items) do
+      {:flush, buffer} -> {:reply, :ok, buffer, {:continue, :flush}}
+      {:cont, buffer} -> {:reply, :ok, buffer}
+    end
   end
 
   def handle_call(:sync_flush, _from, buffer) do
@@ -147,7 +162,7 @@ defmodule ExBuffer.Buffer.Server do
     }
   end
 
-  defp do_insert_batch(buffer, items) do
+  defp do_safe_insert_batch(buffer, items) do
     Enum.reduce(items, buffer, fn item, acc ->
       case Buffer.insert(acc, item) do
         {:flush, acc} ->
@@ -157,6 +172,13 @@ defmodule ExBuffer.Buffer.Server do
         {:cont, acc} ->
           acc
       end
+    end)
+  end
+
+  defp do_unsafe_insert_batch(buffer, items) do
+    Enum.reduce(items, {:cont, buffer}, fn item, acc ->
+      {_, buffer} = acc
+      Buffer.insert(buffer, item)
     end)
   end
 
@@ -184,10 +206,19 @@ defmodule ExBuffer.Buffer.Server do
   end
 
   defp do_flush(buffer) do
-    opts = [length: buffer.length, meta: buffer.flush_meta, size: buffer.size]
+    opts = build_flush_opts(buffer)
 
     buffer
     |> Buffer.items()
     |> buffer.flush_callback.(opts)
+  end
+
+  defp build_flush_opts(buffer) do
+    [
+      length: buffer.length,
+      meta: buffer.flush_meta,
+      partition: buffer.partition,
+      size: buffer.size
+    ]
   end
 end

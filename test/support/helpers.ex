@@ -20,22 +20,14 @@ defmodule ExBuffer.Helpers do
   def start_ex_buffer(opts \\ []) do
     name = Keyword.get(opts, :name, ExBuffer)
     opts = Keyword.put_new(opts, :flush_callback, flush_callback(name))
-
-    case start_supervised({ExBuffer, opts}) do
-      {:ok, pid} -> {:ok, process_name(pid)}
-      {:error, {reason, _}} -> {:error, reason}
-    end
+    start_buffer({ExBuffer, opts})
   end
 
   @doc false
   @spec start_test_buffer(keyword()) :: {:ok, GenServer.name()} | {:error, ExBuffer.error()}
   def start_test_buffer(opts \\ []) do
     opts = Keyword.put(opts, :flush_meta, self())
-
-    case start_supervised({ExBuffer.TestBuffer, opts}) do
-      {:ok, pid} -> {:ok, process_name(pid)}
-      {:error, {reason, _}} -> {:error, reason}
-    end
+    start_buffer({ExBuffer.TestBuffer, opts})
   end
 
   ################################
@@ -47,10 +39,20 @@ defmodule ExBuffer.Helpers do
     fn data, opts -> send(destination, {name, data, opts}) end
   end
 
-  defp process_name(pid) do
-    # TODO(Gordon) - handle case where info is nil?
+  defp start_buffer(child_spec) do
+    case start_supervised(child_spec) do
+      {:ok, pid} -> get_buffer_name(pid)
+      {:error, {{_, {_, _, reason}}, _}} -> {:error, reason}
+      {:error, {reason, _}} -> {:error, reason}
+    end
+  end
+
+  defp get_buffer_name(pid) do
     pid
     |> Process.info()
-    |> Keyword.get(:registered_name)
+    |> case do
+      nil -> {:error, :not_found}
+      info -> {:ok, Keyword.get(info, :registered_name)}
+    end
   end
 end
