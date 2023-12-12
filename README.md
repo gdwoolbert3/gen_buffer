@@ -54,13 +54,11 @@ ExBuffer.insert(:buffer, "baz")
 # ExBuffer flushes asynchronously and outputs ["foo", "bar", "baz"]
 ```
 
-## Examples
+## Example
 
 `ExBuffer` is designed to be highly customizable, allowing it to be used in any number of scenarios.
-
-### Simple Buffer
-
-For example, we can use the `ExBuffer` behaviour to create a buffer with both a size limit and a time limit.
+For example, we can use the `ExBuffer` behaviour to create a buffer with both a size limit and a time
+limit.
 
 ```elixir
 defmodule Buffer do
@@ -101,61 +99,28 @@ Buffer.insert("baz")
 # Buffer flushes asynchronously and outputs ["baz"]
 ```
 
-### Partitioned Buffer
+## Partitioning
 
-Alternatively, we could also use `ExBuffer` in conjunction with Elixir's `PartitionSupervisor` to easily
-create a partitioned buffer with dynamic flush behavior.
-
-```elixir
-defmodule PartitionedBuffer do
-  use Supervisor
-
-  def start_link(opts \\ []) do
-    opts = Keyword.merge([max_length: 3], opts)
-    Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
-  end
-
-  def insert(item, partition) do
-    ExBuffer.insert({:via, PartitionSupervisor, {:buffer, partition}}, item)
-  end
-
-  @impl Supervisor
-  def init(opts) do
-    part_sup_opts = [
-      name: :buffer,
-      child_spec: {ExBuffer, opts},
-      partitions: 2,
-      with_arguments: fn [opts], part ->
-        flush_callback = fn data, _ -> handle_flush(data, part) end
-        [Keyword.put(opts, :flush_callback, flush_callback)]
-      end
-    ]
-
-    children = [
-      {PartitionSupervisor, part_sup_opts}
-    ]
-
-    Supervisor.init(children, strategy: :one_for_one)
-  end
-
-  defp handle_flush(data, partition) do
-    IO.inspect({partition, data})
-  end
-end
-```
-
-We can easily start the `PartitionedBuffer` process from above to see it in action.
+As of v0.4.0, `ExBuffer` also supports partitioning.
 
 ```elixir
-PartitionedBuffer.start_link()
+opts = [
+  flush_callback: fn data, _ -> IO.inspect(data) end,
+  max_length: 3,
+  name: :my_buffer,
+  partitions: 2
+]
 
-PartitionedBuffer.insert("foo", 0)
-PartitionedBuffer.insert("foo", 1)
-PartitionedBuffer.insert("bar", 0)
-PartitionedBuffer.insert("bar", 1)
-PartitionedBuffer.insert("baz", 0)
-# Partition 0 flushes asynchronously and outputs {0, ["foo", "bar", "baz"]}
+children = [
+  {ExBuffer, opts}
+]
 
-PartitionedBuffer.insert("baz", 1)
-# Partition 1 flushes asynchronously and outputs {1, ["foo", "bar", "baz"]}
+Supervisor.start_link(children, strategy: :one_for_one)
 ```
+
+Each `ExBuffer` partition will maintain it's own state and flush independently. For more information
+on partitions, see `ExBuffer.start_link/2`.
+
+It's important to note that `ExBuffer` partitions are intended to be used primarily to split work, not
+to distinguish flush behavior. Conceptually, each partition of a particular `ExBuffer` should flush in
+the same way.
