@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 
 * Removed `length/1`, `next_flush/1`, and `size/1` in favor of `info/2`.
 
+### Links
+
+* [GitHub](https://github.com/gdwoolbert3/ex_buffer/releases/tag/v0.4.0)
+* [HexDocs](https://hexdocs.pm/ex_buffer/0.4.0/readme.html)
+
 ## [0.3.0] - 2023-10-26
 
 ### Added
@@ -29,6 +34,7 @@ All notable changes to this project will be documented in this file.
 ### Links
 
 * [GitHub](https://github.com/gdwoolbert3/ex_buffer/releases/tag/v0.3.0)
+* [HexDocs](https://hexdocs.pm/ex_buffer/0.3.0/readme.html)
 
 ## [0.2.1] - 2023-10-24
 
