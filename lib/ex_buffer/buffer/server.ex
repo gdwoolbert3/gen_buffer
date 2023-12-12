@@ -5,7 +5,16 @@ defmodule ExBuffer.Buffer.Server do
 
   alias ExBuffer.Buffer
 
-  @fields [:buffer_timeout, :flush_callback, :flush_meta, :max_length, :max_size, :size_callback]
+  @server_fields [
+    :buffer_timeout,
+    :flush_callback,
+    :flush_meta,
+    :jitter_rate,
+    :max_length,
+    :max_size,
+    :partition,
+    :size_callback
+  ]
 
   ################################
   # Public API
@@ -14,7 +23,7 @@ defmodule ExBuffer.Buffer.Server do
   @doc false
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
-    {opts, server_opts} = Keyword.split(opts, @fields)
+    {opts, server_opts} = Keyword.split(opts, @server_fields)
     GenServer.start_link(__MODULE__, opts, server_opts)
   end
 
@@ -33,20 +42,22 @@ defmodule ExBuffer.Buffer.Server do
   end
 
   @doc false
+  @spec info(GenServer.server()) :: map()
+  def info(buffer), do: GenServer.call(buffer, :info)
+
+  @doc false
   @spec insert(GenServer.server(), term()) :: :ok
   def insert(buffer, item), do: GenServer.call(buffer, {:insert, item})
 
   @doc false
-  @spec length(GenServer.server()) :: non_neg_integer()
-  def length(buffer), do: GenServer.call(buffer, :length)
-
-  @doc false
-  @spec next_flush(GenServer.server()) :: non_neg_integer() | nil
-  def next_flush(buffer), do: GenServer.call(buffer, :next_flush)
-
-  @doc false
-  @spec size(GenServer.server()) :: non_neg_integer()
-  def size(buffer), do: GenServer.call(buffer, :size)
+  @spec insert_batch(GenServer.server(), Enumerable.t(), keyword()) :: :ok
+  def insert_batch(buffer, items, opts \\ []) do
+    if Keyword.get(opts, :safe_flush, true) do
+      GenServer.call(buffer, {:safe_insert_batch, items})
+    else
+      GenServer.call(buffer, {:unsafe_insert_batch, items})
+    end
+  end
 
   ################################
   # GenServer Callbacks
@@ -56,6 +67,8 @@ defmodule ExBuffer.Buffer.Server do
   @impl GenServer
   @spec init(keyword()) :: {:ok, Buffer.t(), {:continue, :refresh}} | {:stop, ExBuffer.error()}
   def init(opts) do
+    Process.flag(:trap_exit, true)
+
     case init_buffer(opts) do
       {:ok, buffer} -> {:ok, buffer, {:continue, :refresh}}
       {:error, reason} -> {:stop, reason}
@@ -67,18 +80,15 @@ defmodule ExBuffer.Buffer.Server do
   @spec handle_call(term(), GenServer.from(), Buffer.t()) ::
           {:reply, term(), Buffer.t()}
           | {:reply, term(), Buffer.t(), {:continue, :flush | :refresh}}
-  def handle_call(:dump, _from, buffer) do
-    {:reply, Buffer.items(buffer), buffer, {:continue, :refresh}}
-  end
-
   def handle_call(:async_flush, _from, buffer) do
     {:reply, :ok, buffer, {:continue, :flush}}
   end
 
-  def handle_call(:sync_flush, _from, buffer) do
-    do_flush(buffer)
-    {:reply, :ok, buffer, {:continue, :refresh}}
+  def handle_call(:dump, _from, buffer) do
+    {:reply, Buffer.items(buffer), buffer, {:continue, :refresh}}
   end
+
+  def handle_call(:info, _from, buffer), do: {:reply, build_info(buffer), buffer}
 
   def handle_call({:insert, item}, _from, buffer) do
     case Buffer.insert(buffer, item) do
@@ -87,9 +97,22 @@ defmodule ExBuffer.Buffer.Server do
     end
   end
 
-  def handle_call(:length, _from, buffer), do: {:reply, buffer.length, buffer}
-  def handle_call(:next_flush, _from, buffer), do: {:reply, get_next_flush(buffer), buffer}
-  def handle_call(:size, _from, buffer), do: {:reply, buffer.size, buffer}
+  def handle_call({:safe_insert_batch, items}, _from, buffer) do
+    {buffer, count} = do_safe_insert_batch(buffer, items)
+    {:reply, count, buffer}
+  end
+
+  def handle_call({:unsafe_insert_batch, items}, _from, buffer) do
+    case do_unsafe_insert_batch(buffer, items) do
+      {{:flush, buffer}, count} -> {:reply, count, buffer, {:continue, :flush}}
+      {{:cont, buffer}, count} -> {:reply, count, buffer}
+    end
+  end
+
+  def handle_call(:sync_flush, _from, buffer) do
+    do_flush(buffer)
+    {:reply, :ok, buffer, {:continue, :refresh}}
+  end
 
   @doc false
   @impl GenServer
@@ -115,7 +138,6 @@ defmodule ExBuffer.Buffer.Server do
   @doc false
   @impl GenServer
   @spec terminate(term(), Buffer.t()) :: term()
-  def terminate(reason, _) when reason in [:invalid_callback, :invalid_limit], do: :ok
   def terminate(_, buffer), do: do_flush(buffer)
 
   ################################
@@ -127,6 +149,38 @@ defmodule ExBuffer.Buffer.Server do
       nil -> {:error, :invalid_callback}
       _ -> Buffer.new(opts)
     end
+  end
+
+  defp build_info(buffer) do
+    %{
+      length: buffer.length,
+      max_length: buffer.max_length,
+      max_size: buffer.max_size,
+      next_flush: get_next_flush(buffer),
+      partition: buffer.partition,
+      size: buffer.size,
+      timeout: buffer.timeout
+    }
+  end
+
+  defp do_safe_insert_batch(buffer, items) do
+    Enum.reduce(items, {buffer, 0}, fn item, {buffer, count} ->
+      case Buffer.insert(buffer, item) do
+        {:flush, buffer} ->
+          do_flush(buffer)
+          {refresh(buffer), count + 1}
+
+        {:cont, buffer} ->
+          {buffer, count + 1}
+      end
+    end)
+  end
+
+  defp do_unsafe_insert_batch(buffer, items) do
+    Enum.reduce(items, {{:cont, buffer}, 0}, fn item, acc ->
+      {{_, buffer}, count} = acc
+      {Buffer.insert(buffer, item), count + 1}
+    end)
   end
 
   defp refresh(%Buffer{timeout: :infinity} = buffer), do: Buffer.refresh(buffer)
@@ -153,10 +207,19 @@ defmodule ExBuffer.Buffer.Server do
   end
 
   defp do_flush(buffer) do
-    opts = [length: buffer.length, meta: buffer.flush_meta, size: buffer.size]
+    opts = build_flush_opts(buffer)
 
     buffer
     |> Buffer.items()
     |> buffer.flush_callback.(opts)
+  end
+
+  defp build_flush_opts(buffer) do
+    [
+      length: buffer.length,
+      meta: buffer.flush_meta,
+      partition: buffer.partition,
+      size: buffer.size
+    ]
   end
 end
