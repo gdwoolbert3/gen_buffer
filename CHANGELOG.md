@@ -2,12 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.4.0] - 2023-11-16
+## [0.4.0] - 2023-12-12
 
 ### Added
 
 * Added support for rendundancy partitions for an `ExBuffer`.
 * Added an `info/2` function that replaces `length/1`, `next_flush/1`, and `size/1`.
+* Added an `insert_batch/2` function that inserts multiple items at once.
 
 ### Changed
 
