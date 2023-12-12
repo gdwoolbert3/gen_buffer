@@ -64,9 +64,9 @@ defmodule ExBuffer do
   @doc """
   Starts an `ExBuffer` process linked to the current process.
 
-  The first argument argument (`module`) is optional. It is intended to be used when
-  calling this function from a module that implements the `ExBuffer` behaviour. When
-  a module is passed, it may interact with the options that were passed in:
+  The first argument (`module`) is optional. It is intended to be used when calling
+  this function from a module that implements the `ExBuffer` behaviour. When a module
+  is passed, it may interact with the options that were passed in:
 
   * If the module implements the `handle_flush/2` callback, it will override the
     `:flush_callback` option.
@@ -83,11 +83,11 @@ defmodule ExBuffer do
     * `:flush_callback` - The function that will be invoked to handle a flush.
       This function should expect two parameters: a list of items and a keyword
       list of flush opts. The flush opts include the size and length of the buffer
-      at the time of the flush and optionally include any provided metadata (see
-      `:flush_meta` for more information). This function can return any term as the
-      return value is not used by the `ExBuffer`. (Required)
+      at the time of the flush, the partition index of the flushed buffer, and any
+      provided metadata (see `:flush_meta` for more information). This function can
+      return any term as the return value is not used by the `ExBuffer`. (Required)
 
-    * `ExBuffer_timeout` - A non-negative integer representing the maximum time
+    * `buffer_timeout` - A non-negative integer representing the maximum time
       (in ms) allowed between flushes of the `ExBuffer`. Once this amount of time
       has passed, the `ExBuffer` will be flushed. By default, an `ExBuffer` does not
       have a timeout. (Optional)
@@ -129,7 +129,7 @@ defmodule ExBuffer do
 
   Additionally, an ExBuffer can also be started with any `GenServer` options.
   """
-  @spec start_link(module() | nil, keyword()) :: GenServer.on_start()
+  @spec start_link(module() | nil, keyword()) :: Supervisor.on_start()
   def start_link(module \\ nil, opts) do
     opts = maybe_update_opts(opts, module)
 
@@ -336,8 +336,8 @@ defmodule ExBuffer do
   The information about an `ExBuffer` can be retrieved with the following options:
 
     * `:partition` - A non-negative integer representing the specific partition index to
-      retrieve information for. By default, this function retrieves information fo all partitions.
-      (Optional)
+      retrieve information for. By default, this function retrieves information for all
+      partitions. (Optional)
 
   ## Examples
 
@@ -366,8 +366,8 @@ defmodule ExBuffer do
   end
 
   @doc """
-  Inserts the given item into the given `ExBuffer` based on the partitioner that
-  the given `ExBuffer` was started with.
+  Inserts the given item into the given `ExBuffer` based on the partitioner that the
+  given `ExBuffer` was started with.
 
   ## Example
 
@@ -382,10 +382,10 @@ defmodule ExBuffer do
   end
 
   @doc """
-  Inserts the given batch of items into the given `ExBuffer` based on the partitioner
-  that the given `ExBuffer` was started with.
+  Inserts the given batch of items into the given `ExBuffer` based on the partitioner that
+  the given `ExBuffer` was started with.
 
-  All items in the batch will be inserted into the same partition.
+  All items in the batch are inserted into the same partition.
 
   ## Options
 
@@ -400,13 +400,14 @@ defmodule ExBuffer do
 
   ## Example
 
-      iex> ExBuffer.insert(ExBuffer, ["foo", "bar", "baz"])
-      :ok
+      iex> ExBuffer.insert_batch(ExBuffer, ["foo", "bar", "baz"])
+      {:ok, 3}
   """
-  @spec insert_batch(GenServer.server(), Enumerable.t(), keyword()) :: :ok | {:error, :not_found}
+  @spec insert_batch(GenServer.server(), Enumerable.t(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, :not_found}
   def insert_batch(buffer, items, opts \\ []) do
     with {:ok, {partitioner, _}} <- fetch_buffer(buffer) do
-      do_part(buffer, partitioner.(), &Server.insert_batch(&1, items, opts))
+      {:ok, do_part(buffer, partitioner.(), &Server.insert_batch(&1, items, opts))}
     end
   end
 

@@ -430,7 +430,7 @@ defmodule ExBufferTest do
       items = ["foo", "bar", "baz"]
 
       assert {:ok, buffer} = start_ex_buffer()
-      assert ExBuffer.insert_batch(buffer, items) == :ok
+      assert ExBuffer.insert_batch(buffer, items) == {:ok, 3}
       assert ExBuffer.dump(buffer) == {:ok, ["foo", "bar", "baz"]}
     end
 
@@ -439,7 +439,7 @@ defmodule ExBufferTest do
       items = ["foo", "bar", "baz"]
 
       assert {:ok, buffer} = start_ex_buffer(opts)
-      assert ExBuffer.insert_batch(buffer, items) == :ok
+      assert ExBuffer.insert_batch(buffer, items) == {:ok, 3}
       assert ExBuffer.dump(buffer, partition: 0) == {:ok, ["foo", "bar", "baz"]}
     end
 
@@ -448,7 +448,7 @@ defmodule ExBufferTest do
       items = ["foo", "bar", "baz"]
 
       assert {:ok, buffer} = start_ex_buffer(opts)
-      assert ExBuffer.insert_batch(buffer, items) == :ok
+      assert ExBuffer.insert_batch(buffer, items) == {:ok, 3}
       assert_receive {^buffer, ["foo", "bar"], _}
       assert ExBuffer.dump(buffer) == {:ok, ["baz"]}
     end
@@ -458,7 +458,7 @@ defmodule ExBufferTest do
       items = ["foo", "bar", "baz"]
 
       assert {:ok, buffer} = start_ex_buffer(opts)
-      assert ExBuffer.insert_batch(buffer, items, safe_flush: false) == :ok
+      assert ExBuffer.insert_batch(buffer, items, safe_flush: false) == {:ok, 3}
       assert_receive {^buffer, ["foo", "bar", "baz"], _}
     end
   end
