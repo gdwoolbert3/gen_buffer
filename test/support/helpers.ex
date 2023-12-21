@@ -3,8 +3,6 @@ defmodule ExBuffer.Helpers do
 
   import ExUnit.Callbacks, only: [start_supervised: 1]
 
-  @type error :: ExBuffer.Partition.error() | :invalid_partitions | :invalid_partitioner
-
   ################################
   # Public API
   ################################
@@ -18,7 +16,7 @@ defmodule ExBuffer.Helpers do
   end
 
   @doc false
-  @spec start_ex_buffer(keyword()) :: {:ok, GenServer.name()} | {:error, error()}
+  @spec start_ex_buffer(keyword()) :: {:ok, GenServer.name()} | {:error, atom()}
   def start_ex_buffer(opts \\ []) do
     name = Keyword.get(opts, :name, ExBuffer)
     opts = Keyword.put_new(opts, :flush_callback, flush_callback(name))
@@ -26,7 +24,7 @@ defmodule ExBuffer.Helpers do
   end
 
   @doc false
-  @spec start_test_buffer(keyword()) :: {:ok, GenServer.name()} | {:error, error()}
+  @spec start_test_buffer(keyword()) :: {:ok, GenServer.name()} | {:error, atom()}
   def start_test_buffer(opts \\ []) do
     opts = Keyword.put(opts, :flush_meta, self())
     start_buffer({ExBuffer.TestBuffer, opts})

@@ -17,8 +17,6 @@ defmodule ExBuffer.Partition do
     timer: nil
   ]
 
-  @type error :: :invalid_jitter | :invalid_callback | :invalid_limit
-
   @opaque t :: %__MODULE__{}
 
   ################################
@@ -65,7 +63,7 @@ defmodule ExBuffer.Partition do
 
   @doc false
   @impl GenServer
-  @spec init(keyword()) :: {:ok, t(), {:continue, :refresh}} | {:stop, error()}
+  @spec init(keyword()) :: {:ok, t(), {:continue, :refresh}} | {:stop, atom()}
   def init(opts) do
     Process.flag(:trap_exit, true)
 
