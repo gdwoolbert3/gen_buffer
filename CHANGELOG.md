@@ -2,17 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2023-12-21
+
+### Changed
+
+* Removed `ExBuffer.chunk/2` and `ExBuffer.chunk!/2`.
+* Updated all public functions to raise an `ArgumentError` instead of
+  returning an `:error` tuple.
+* Updated the options for `ExBuffer.flush/2` and `ExBuffer.insert_batch/2`.
+* Simplified the internal code structure.
+
+### Links
+
 ## [0.4.0] - 2023-12-12
 
 ### Added
 
 * Added support for rendundancy partitions for an `ExBuffer`.
-* Added an `info/2` function that replaces `length/1`, `next_flush/1`, and `size/1`.
-* Added an `insert_batch/2` function that inserts multiple items at once.
+* Added an `ExBuffer.info/2` function that replaces `ExBuffer.length/1`,
+  `ExBuffer.next_flush/1`, and `ExBuffer.size/1`.
+* Added an `ExBuffer.insert_batch/2` function that inserts multiple items
+  at once.
 
 ### Changed
 
-* Removed `length/1`, `next_flush/1`, and `size/1` in favor of `info/2`.
+* Removed `ExBuffer.length/1`, `ExBuffer.next_flush/1`, and `ExBuffer.size/1`
+  in favor of `ExBuffer.info/2`.
 
 ### Links
 

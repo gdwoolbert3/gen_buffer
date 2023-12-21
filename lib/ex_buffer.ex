@@ -10,7 +10,7 @@ defmodule ExBuffer do
   `ExBuffer` also includes a number of helpful tools for testing and debugging.
   """
 
-  alias ExBuffer.Buffer.{Server, Stream}
+  alias ExBuffer.Partition
 
   @supervisor_fields [:name, :partitioner, :partitions]
 
@@ -43,13 +43,6 @@ defmodule ExBuffer do
   """
   @callback handle_size(item :: term()) :: non_neg_integer()
   @optional_callbacks handle_size: 1
-
-  ################################
-  # Types
-  ################################
-
-  @typedoc "Errors returned by `ExBuffer` functions."
-  @type error :: :invalid_callback | :invalid_jitter | :invalid_limit | :invalid_partitioner
 
   ################################
   # Public API
@@ -85,9 +78,9 @@ defmodule ExBuffer do
       list of flush opts. The flush opts include the size and length of the buffer
       at the time of the flush, the partition index of the flushed buffer, and any
       provided metadata (see `:flush_meta` for more information). This function can
-      return any term as the return value is not used by the `ExBuffer`. (Required)
+      return any term as the return value is disregarded by the `ExBuffer`. (Required)
 
-    * `buffer_timeout` - A non-negative integer representing the maximum time
+    * `:buffer_timeout` - A non-negative integer representing the maximum time
       (in ms) allowed between flushes of the `ExBuffer`. Once this amount of time
       has passed, the `ExBuffer` will be flushed. By default, an `ExBuffer` does not
       have a timeout. (Optional)
@@ -96,8 +89,8 @@ defmodule ExBuffer do
       By default, this value will be `nil`. (Optional)
 
     * `:jitter_rate` - A float between 0 and 1 that is used to offset the limits of
-      `ExBuffer` partitions. Limits are decreased by a random rate between 0 and this
-      value. By default, no jitter is applied to an `ExBuffer`.
+      `ExBuffer` partitions. Limits are **decreased** by a random rate between 0 and this
+      value. By default, no jitter is applied to an `ExBuffer`. (Optional)
 
     * `:max_length` - A non-negative integer representing the maximum allowed
       length (item count) of the `ExBuffer`. Once the limit is hit, the `ExBuffer` will
@@ -105,8 +98,8 @@ defmodule ExBuffer do
 
     * `:max_size` - A non-negative integer representing the maximum allowed size
       (in bytes) of the `ExBuffer`. Once the limit is hit (or exceeded), the `ExBuffer`
-      will be flushed. The `:size_callback` option determines how item size is
-      computed. By default, an `ExBuffer` does not have a max size. (Optional)
+      will be flushed. The `:size_callback` option determines how item size is computed.
+      By default, an `ExBuffer` does not have a max size. (Optional)
 
     * `:name` - The registered name for the `ExBuffer`. This must be either an atom or a
       `:via` tuple. By default (when an implementation module is not used), the name of an
@@ -115,17 +108,16 @@ defmodule ExBuffer do
     * `:partitioner` - The strategy for assigning items to a partition. The partitioner
       can be either `:rotating` or `:random`. The former assigns items to partitions in a
       round-robin fashion and the latter assigns items randomly. By default, an `ExBuffer`
-      uses a `:rotating` partition. (Optional)
+      uses a `:rotating` partitioner. (Optional)
 
     * `:partitions` - The number of partitions for the `ExBuffer`. By default, an `ExBuffer`
       has 1 partition. (Optional)
 
-    * `:size_callback` - The function that will be invoked to determine the size
-      of an item. This function should expect a single parameter representing an
-      item and should return a single non-negative integer representing that item's
-      byte size. The default `ExBuffer` size callback is `Kernel.byte_size/1`
-      (`:erlang.term_to_binary/1` is used to convert non-bitstring inputs to binary
-      if necessary). (Optional)
+    * `:size_callback` - The function that will be invoked to determine the size of an item.
+      This function should expect a single parameter representing an item and should return
+      a single non-negative integer representing that item's byte size. The default
+      `ExBuffer` size callback is `Kernel.byte_size/1` (`:erlang.term_to_binary/1` is used
+      to convert non-bitstring inputs to binary if necessary). (Optional)
 
   Additionally, an ExBuffer can also be started with any `GenServer` options.
   """
@@ -142,81 +134,6 @@ defmodule ExBuffer do
       result
     end
   end
-
-  @doc """
-  Lazily chunks an enumerable based on `ExBuffer` flush conditions.
-
-  This function currently supports length and size conditions. If multiple
-  conditions are specified, a chunk is emitted once the **first** condition is
-  met (just like an `ExBuffer` process).
-
-  While this function is useful in it's own right, it's included primarily as
-  another way to synchronously test applications that use `ExBuffer`.
-
-  ## Options
-
-  An enumerable can be chunked with the following options:
-
-    * `:max_length` - A non-negative integer representing the maximum allowed
-      length (item count) of a chunk. By default, there is no max length. (Optional)
-
-    * `:max_size` - A non-negative integer representing the maximum allowed size
-      (in bytes) of a chunk. The `:size_callback` option determines how item size
-      is computed. By default, there is no max size. (Optional)
-
-    * `:size_callback` - The function that will be invoked to deterime the size
-      of an item. For more information, see `ExBuffer.start_link/2`. (Optional)
-
-  > #### Warning {: .warning}
-  >
-  > Including neither `:max_length` nor `:max_size` is permitted but will result in a
-  > single chunk being emitted. One can achieve a similar result in a more performant
-  > way using `Stream.into/2`. In that same vein, including only a `:max_length`
-  > condition makes this function a less performant version of `Stream.chunk_every/2`.
-  > This function is optimized for chunking by either size or size **and** count. Any other
-  > chunking strategy can likely be achieved in a more efficient way using other methods.
-
-  ## Examples
-
-      iex> enum = ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
-      ...> {:ok, enum} = ExBuffer.chunk(enum, max_length: 3, max_size: 10)
-      ...> Enum.into(enum, [])
-      [["foo", "bar", "baz"], ["foobar", "barbaz"], ["foobarbaz"]]
-
-      iex> enum = ["foo", "bar", "baz"]
-      ...> {:ok, enum} = ExBuffer.chunk(enum, max_size: 8, size_callback: &(byte_size(&1) + 1))
-      ...> Enum.into(enum, [])
-      [["foo", "bar"], ["baz"]]
-
-      iex> ExBuffer.chunk(["foo", "bar", "baz"], max_length: -5)
-      {:error, :invalid_limit}
-  """
-  @spec chunk(Enumerable.t(), keyword()) :: {:ok, Enumerable.t()} | {:error, error()}
-  defdelegate chunk(enum, opts \\ []), to: Stream
-
-  @doc """
-  Lazily chunks an enumerable based on `ExBuffer` flush conditions and raises an `ArgumentError`
-  with invalid options.
-
-  For more information on this function's usage, purpose, and options, see `ExBuffer.chunk!/2`.
-
-  ## Examples
-
-      iex> ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
-      ...> |> ExBuffer.chunk!(max_length: 3, max_size: 10)
-      ...> |> Enum.into([])
-      [["foo", "bar", "baz"], ["foobar", "barbaz"], ["foobarbaz"]]
-
-      iex> ["foo", "bar", "baz"]
-      ...> |> ExBuffer.chunk!(max_size: 8, size_callback: &(byte_size(&1) + 1))
-      ...> |> Enum.into([])
-      [["foo", "bar"], ["baz"]]
-
-      iex> ExBuffer.chunk!(["foo", "bar", "baz"], max_length: -5)
-      ** (ArgumentError) invalid limit
-  """
-  @spec chunk!(Enumerable.t(), keyword()) :: Enumerable.t()
-  defdelegate chunk!(enum, opts \\ []), to: Stream
 
   @doc """
   Dumps the contents of the given `ExBuffer` to a list, bypassing a flush
@@ -238,24 +155,22 @@ defmodule ExBuffer do
       iex> ExBuffer.insert(ExBuffer, "foo")
       iex> ExBuffer.insert(ExBuffer, "bar")
       iex> ExBuffer.dump(ExBuffer)
-      {:ok, ["foo", "bar"]}
+      ["foo", "bar"]
 
       iex> ExBuffer.insert(ExBuffer, "foo")
       iex> ExBuffer.insert(ExBuffer, "bar")
       iex> ExBuffer.dump(ExBuffer, partition: 0)
-      {:ok, ["foo"]}
+      ["foo"]
   """
-  @spec dump(PartitionSupervisor.name(), keyword()) ::
-          {:ok, list()} | {:error, :invalid_partition | :not_found}
+  @spec dump(PartitionSupervisor.name(), keyword()) :: list()
   def dump(buffer, opts \\ []) do
     with {:ok, {_, parts}} <- fetch_buffer(buffer),
          {:ok, part} <- validate_partition(opts, parts) do
-      fun = &Server.dump/1
-
-      case part do
-        :all -> {:ok, Enum.reduce(1..parts, [], &(&2 ++ do_part(buffer, &1 - 1, fun)))}
-        part -> {:ok, do_part(buffer, part, fun)}
-      end
+      Enum.reduce(enumerate_parts(parts, part), [], fn part, acc ->
+        acc ++ do_part(buffer, part, &Partition.dump/1)
+      end)
+    else
+      {:error, reason} -> raise(ArgumentError, to_message(reason))
     end
   end
 
@@ -270,8 +185,9 @@ defmodule ExBuffer do
 
   An `ExBuffer` can be flushed with the following options:
 
-    * `:async` - A boolean representing whether or not the flush will be asynchronous.
-      By default, this value is `true`. (Optional)
+    * `:mode` - A value denoting whether the flush will be synchronous or asynchronous.
+      Possible values are ':sync` and `:async`. By default, this value is `:async`.
+      (Optional)
 
     * `:partition` - A non-negative integer representing the specific partition index to
       flush. By default, this function flushes all partitions. (Optional)
@@ -292,16 +208,15 @@ defmodule ExBuffer do
       iex> ExBuffer.flush(ExBuffer, partition: 0)
       :ok
   """
-  @spec flush(GenServer.server(), keyword()) :: :ok | {:error, :invalid_partition | :not_found}
+  @spec flush(GenServer.server(), keyword()) :: :ok
   def flush(buffer, opts \\ []) do
     with {:ok, {_, parts}} <- fetch_buffer(buffer),
          {:ok, part} <- validate_partition(opts, parts) do
-      fun = &Server.flush(&1, opts)
-
-      case part do
-        :all -> Enum.each(1..parts, &do_part(buffer, &1 - 1, fun))
-        part -> do_part(buffer, part, fun)
-      end
+      Enum.each(enumerate_parts(parts, part), fn part ->
+        do_part(buffer, part, &Partition.flush(&1, opts))
+      end)
+    else
+      {:error, reason} -> raise(ArgumentError, to_message(reason))
     end
   end
 
@@ -342,26 +257,24 @@ defmodule ExBuffer do
   ## Examples
 
       iex> ExBuffer.insert(ExBuffer, "foo")
-      iex> {:ok, [%{length: length}, %{}]} = ExBuffer.info(ExBuffer)
+      iex> [%{length: length}, %{}] = ExBuffer.info(ExBuffer)
       iex> length
       1
 
       iex> ExBuffer.insert(ExBuffer, "foo")
-      iex> {:ok, [%{length: length, partition: 0}]} = ExBuffer.info(ExBuffer, partition: 0)
+      iex> [%{length: length, partition: 0}] = ExBuffer.info(ExBuffer, partition: 0)
       iex> length
       1
   """
-  @spec info(GenServer.server(), keyword()) ::
-          {:ok, list()} | {:error, :invalid_partition | :not_found}
+  @spec info(GenServer.server(), keyword()) :: [map()]
   def info(buffer, opts \\ []) do
     with {:ok, {_, parts}} <- fetch_buffer(buffer),
          {:ok, part} <- validate_partition(opts, parts) do
-      fun = &Server.info/1
-
-      case part do
-        :all -> {:ok, Enum.map(1..parts, &do_part(buffer, &1 - 1, fun))}
-        part -> {:ok, [do_part(buffer, part, fun)]}
-      end
+      Enum.map(enumerate_parts(parts, part), fn part ->
+        do_part(buffer, part, &Partition.info/1)
+      end)
+    else
+      {:error, reason} -> raise(ArgumentError, to_message(reason))
     end
   end
 
@@ -374,40 +287,52 @@ defmodule ExBuffer do
       iex> ExBuffer.insert(ExBuffer, "foo")
       :ok
   """
-  @spec insert(GenServer.server(), term()) :: :ok | {:error, :not_found}
+  @spec insert(GenServer.server(), term()) :: :ok
   def insert(buffer, item) do
-    with {:ok, {partitioner, _}} <- fetch_buffer(buffer) do
-      do_part(buffer, partitioner.(), &Server.insert(&1, item))
+    case fetch_buffer(buffer) do
+      {:ok, {partitioner, _}} -> do_part(buffer, partitioner.(), &Partition.insert(&1, item))
+      {:error, reason} -> raise(ArgumentError, to_message(reason))
     end
   end
 
   @doc """
   Inserts the given batch of items into the given `ExBuffer` based on the partitioner that
-  the given `ExBuffer` was started with.
+  the given `ExBuffer` was started with. This function returns the number of items that were
+  inserted.
 
   All items in the batch are inserted into the same partition.
+
+  > #### Tip {: .tip}
+  >
+  > When inserting multiple items into an `ExBuffer`, this function will be far more performant
+  > than calling `ExBuffer.insert/2` for each one. As such, whenever items become available in
+  > batches, this function should be preferred.
 
   ## Options
 
   A batch of items can be inserted into an `ExBuffer` with the following options:
 
-    * `:safe_flush` - A boolean denoting whether or not to flush "safely". By default, this
-      value is `true`, meaning that, if a flush condition is met while inserting items, the
-      `ExBuffer` partition will synchronously flush before continuing to insert items. If
-      this value is `false`, all items will be inserted before checking if any flush
-      conditions have been met. Afterwards, if a flush condition has been met, the `ExBuffer`
-      partition will be flushed asynchronously.
+    * `:flush_mode` - A value denoting whether how buffer will be flushed (if applicable).
+      Possible values are `:sync` and `:async`. By default, this value is `:sync`, meaning
+      that, if a flush condition is met while inserting items, the `ExBuffer` partition will
+      synchronously flush before continuing to insert items. If this value is set to `:async`,
+      all items will be inserted before checking if any flush conditions have been met.
+      Afterwards, if a flush condition has been met, the `ExBuffer` partition will be flushed
+      asynchronously. (Optional)
 
   ## Example
 
       iex> ExBuffer.insert_batch(ExBuffer, ["foo", "bar", "baz"])
-      {:ok, 3}
+      3
   """
-  @spec insert_batch(GenServer.server(), Enumerable.t(), keyword()) ::
-          {:ok, non_neg_integer()} | {:error, :not_found}
+  @spec insert_batch(GenServer.server(), Enumerable.t(), keyword()) :: non_neg_integer()
   def insert_batch(buffer, items, opts \\ []) do
-    with {:ok, {partitioner, _}} <- fetch_buffer(buffer) do
-      {:ok, do_part(buffer, partitioner.(), &Server.insert_batch(&1, items, opts))}
+    case fetch_buffer(buffer) do
+      {:ok, {partitioner, _}} ->
+        do_part(buffer, partitioner.(), &Partition.insert_batch(&1, items, opts))
+
+      {:error, reason} ->
+        raise(ArgumentError, to_message(reason))
     end
   end
 
@@ -464,17 +389,17 @@ defmodule ExBuffer do
     end
   end
 
-  defp validate_partitions(opts) do
-    case Keyword.get(opts, :partitions, 1) do
-      parts when is_integer(parts) and parts > 0 -> {:ok, parts}
-      _ -> {:error, :invalid_partitions}
-    end
-  end
-
   defp validate_partitioner(opts) do
     case Keyword.get(opts, :partitioner, :rotating) do
       partitioner when partitioner in [:random, :rotating] -> {:ok, partitioner}
       _ -> {:error, :invalid_partitioner}
+    end
+  end
+
+  defp validate_partitions(opts) do
+    case Keyword.get(opts, :partitions, 1) do
+      parts when is_integer(parts) and parts > 0 -> {:ok, parts}
+      _ -> {:error, :invalid_partitions}
     end
   end
 
@@ -488,7 +413,7 @@ defmodule ExBuffer do
   defp do_start_link(opts) do
     {sup_opts, buffer_opts} = Keyword.split(opts, @supervisor_fields)
     with_args = fn [opts], part -> [Keyword.put(opts, :partition, part)] end
-    child_spec = {Server, buffer_opts}
+    child_spec = {Partition, buffer_opts}
 
     sup_opts
     |> Keyword.merge(with_arguments: with_args, child_spec: child_spec)
@@ -527,12 +452,15 @@ defmodule ExBuffer do
     |> build_key()
     |> :persistent_term.get(nil)
     |> case do
-      nil -> {:error, :not_found}
+      nil -> {:error, :buffer_not_found}
       buffer -> {:ok, buffer}
     end
   end
 
   defp build_key(buffer), do: {__MODULE__, buffer}
+
+  defp enumerate_parts(parts, :all), do: 0..(parts - 1)
+  defp enumerate_parts(_, part), do: [part]
 
   defp do_part(buffer, partition, fun) do
     buffer
@@ -543,4 +471,6 @@ defmodule ExBuffer do
   defp partition_name(buffer, partition) do
     {:via, PartitionSupervisor, {buffer, partition}}
   end
+
+  defp to_message(reason), do: String.replace(to_string(reason), "_", " ")
 end
