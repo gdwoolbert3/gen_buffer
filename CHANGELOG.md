@@ -14,6 +14,9 @@ All notable changes to this project will be documented in this file.
 
 ### Links
 
+* [GitHub](https://github.com/gdwoolbert3/ex_buffer/releases/tag/v0.5.0)
+* [HexDocs](https://hexdocs.pm/ex_buffer/0.5.0/readme.html)
+
 ## [0.4.0] - 2023-12-12
 
 ### Added
