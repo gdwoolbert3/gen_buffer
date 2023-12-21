@@ -50,7 +50,7 @@ defmodule ExBufferTest do
       opts = [jitter_rate: 0.05, max_size: 10_000, partitions: 2]
 
       assert {:ok, buffer} = start_ex_buffer(opts)
-      assert {:ok, [%{max_size: limit_1}, %{max_size: limit_2}]} = ExBuffer.info(buffer)
+      assert [%{max_size: limit_1}, %{max_size: limit_2}] = ExBuffer.info(buffer)
       assert limit_1 != limit_2
     end
 
@@ -98,77 +98,12 @@ defmodule ExBufferTest do
     end
   end
 
-  describe "chunk/2" do
-    test "will correctly chunk an enumerable" do
-      opts = [max_length: 3, max_size: 10]
-      enum = ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
-
-      assert {:ok, enum} = ExBuffer.chunk(enum, opts)
-      assert Enum.into(enum, []) == [["foo", "bar", "baz"], ["foobar", "barbaz"], ["foobarbaz"]]
-    end
-
-    test "will correctly chunk an enumerable with a size callback" do
-      opts = [max_size: 8, size_callback: &(byte_size(&1) + 1)]
-      enum = ["foo", "bar", "baz"]
-
-      assert {:ok, enum} = ExBuffer.chunk(enum, opts)
-      assert Enum.into(enum, []) == [["foo", "bar"], ["baz"]]
-    end
-
-    test "will return an error with an invalid callback" do
-      opts = [size_callback: fn -> :ok end]
-      enum = ["foo", "bar", "baz"]
-
-      assert ExBuffer.chunk(enum, opts) == {:error, :invalid_callback}
-    end
-
-    test "will return an error with an invalid limit" do
-      opts = [max_length: -5]
-
-      assert ExBuffer.chunk(["foo", "bar", "baz"], opts) == {:error, :invalid_limit}
-    end
-  end
-
-  describe "chunk!/2" do
-    test "will correctly chunk an enumerable" do
-      opts = [max_length: 3, max_size: 10]
-      enum = ["foo", "bar", "baz", "foobar", "barbaz", "foobarbaz"]
-      enum = ExBuffer.chunk!(enum, opts)
-
-      assert Enum.into(enum, []) == [["foo", "bar", "baz"], ["foobar", "barbaz"], ["foobarbaz"]]
-    end
-
-    test "will correctly chunk an enumerable with a size callback" do
-      opts = [max_size: 8, size_callback: &(byte_size(&1) + 1)]
-      enum = ["foo", "bar", "baz"]
-      enum = ExBuffer.chunk!(enum, opts)
-
-      assert Enum.into(enum, []) == [["foo", "bar"], ["baz"]]
-    end
-
-    test "will raise an error with an invalid callback" do
-      opts = [size_callback: fn -> :ok end]
-      enum = ["foo", "bar", "baz"]
-      fun = fn -> ExBuffer.chunk!(enum, opts) end
-
-      assert_raise ArgumentError, "invalid callback", fun
-    end
-
-    test "will raise an error with an invalid limit" do
-      opts = [max_length: -5]
-      enum = ["foo", "bar", "baz"]
-      fun = fn -> ExBuffer.chunk!(enum, opts) end
-
-      assert_raise ArgumentError, "invalid limit", fun
-    end
-  end
-
   describe "dump/2" do
     test "will dump an unpartitioned ExBuffer" do
       assert {:ok, buffer} = start_ex_buffer()
       assert seed_buffer(buffer) == :ok
-      assert ExBuffer.dump(buffer) == {:ok, ["foo", "bar", "baz"]}
-      assert {:ok, [%{length: 0}]} = ExBuffer.info(buffer)
+      assert ExBuffer.dump(buffer) == ["foo", "bar", "baz"]
+      assert [%{length: 0}] = ExBuffer.info(buffer)
     end
 
     test "will dump a partitioned ExBuffer" do
@@ -176,8 +111,8 @@ defmodule ExBufferTest do
 
       assert {:ok, buffer} = start_ex_buffer(opts)
       assert seed_buffer(buffer) == :ok
-      assert ExBuffer.dump(buffer) == {:ok, ["foo", "baz", "bar"]}
-      assert {:ok, [%{length: 0}, %{length: 0}]} = ExBuffer.info(buffer)
+      assert ExBuffer.dump(buffer) == ["foo", "baz", "bar"]
+      assert [%{length: 0}, %{length: 0}] = ExBuffer.info(buffer)
     end
 
     test "will dump a specific ExBuffer partition" do
@@ -185,17 +120,22 @@ defmodule ExBufferTest do
 
       assert {:ok, buffer} = start_ex_buffer(opts)
       assert seed_buffer(buffer) == :ok
-      assert ExBuffer.dump(buffer, partition: 0) == {:ok, ["foo", "baz"]}
-      assert {:ok, [%{length: 0}]} = ExBuffer.info(buffer, partition: 0)
+      assert ExBuffer.dump(buffer, partition: 0) == ["foo", "baz"]
+      assert [%{length: 0}] = ExBuffer.info(buffer, partition: 0)
     end
 
     test "will return an error with an invalid buffer" do
-      assert ExBuffer.dump(:fake_buffer) == {:error, :not_found}
+      fun = fn -> ExBuffer.dump(:fake_buffer) end
+
+      assert_raise ArgumentError, "buffer not found", fun
     end
 
     test "will return an error with an invalid partition" do
       assert {:ok, buffer} = start_ex_buffer()
-      assert ExBuffer.dump(buffer, partition: -1) == {:error, :invalid_partition}
+
+      fun = fn -> ExBuffer.dump(buffer, partition: -1) end
+
+      assert_raise ArgumentError, "invalid partition", fun
     end
   end
 
@@ -237,7 +177,7 @@ defmodule ExBufferTest do
     test "will synchronously flush an ExBuffer" do
       assert {:ok, buffer} = start_ex_buffer()
       assert seed_buffer(buffer) == :ok
-      assert ExBuffer.flush(buffer, async: false) == :ok
+      assert ExBuffer.flush(buffer, mode: :sync) == :ok
       assert_received {^buffer, ["foo", "bar", "baz"], _}
     end
 
@@ -262,12 +202,17 @@ defmodule ExBufferTest do
     end
 
     test "will return an error with an invalid buffer" do
-      assert ExBuffer.flush(:fake_buffer) == {:error, :not_found}
+      fun = fn -> ExBuffer.flush(:fake_buffer) end
+
+      assert_raise ArgumentError, "buffer not found", fun
     end
 
     test "will return an error with an invalid partition" do
       assert {:ok, buffer} = start_ex_buffer()
-      assert ExBuffer.flush(buffer, partition: -1) == {:error, :invalid_partition}
+
+      fun = fn -> ExBuffer.flush(buffer, partition: -1) end
+
+      assert_raise ArgumentError, "invalid partition", fun
     end
   end
 
@@ -275,7 +220,7 @@ defmodule ExBufferTest do
     test "will return info for an unpartitioned ExBuffer" do
       assert {:ok, buffer} = start_ex_buffer()
       assert seed_buffer(buffer) == :ok
-      assert {:ok, [%{length: 3}]} = ExBuffer.info(buffer)
+      assert [%{length: 3}] = ExBuffer.info(buffer)
     end
 
     test "will return info for a partitioned ExBuffer" do
@@ -283,7 +228,7 @@ defmodule ExBufferTest do
 
       assert {:ok, buffer} = start_ex_buffer(opts)
       assert seed_buffer(buffer) == :ok
-      assert {:ok, [%{length: 2}, %{length: 1}]} = ExBuffer.info(buffer)
+      assert [%{length: 2}, %{length: 1}] = ExBuffer.info(buffer)
     end
 
     test "will return info for a specific ExBuffer partition" do
@@ -291,7 +236,7 @@ defmodule ExBufferTest do
 
       assert {:ok, buffer} = start_ex_buffer(opts)
       assert seed_buffer(buffer) == :ok
-      assert {:ok, [%{length: 2}]} = ExBuffer.info(buffer, partition: 0)
+      assert [%{length: 2}] = ExBuffer.info(buffer, partition: 0)
     end
 
     test "will return info for an ExBuffer with a size callback" do
@@ -299,13 +244,13 @@ defmodule ExBufferTest do
 
       assert {:ok, buffer} = start_ex_buffer(opts)
       assert seed_buffer(buffer) == :ok
-      assert {:ok, [%{size: 12}]} = ExBuffer.info(buffer)
+      assert [%{size: 12}] = ExBuffer.info(buffer)
     end
 
     test "will return info for an ExBuffer started from an implementation module" do
       assert {:ok, buffer} = start_test_buffer()
       assert seed_buffer(buffer) == :ok
-      assert {:ok, [%{size: 12}]} = ExBuffer.info(buffer)
+      assert [%{size: 12}] = ExBuffer.info(buffer)
     end
 
     test "will include next flush when applicable" do
@@ -313,17 +258,22 @@ defmodule ExBufferTest do
 
       assert {:ok, buffer} = start_ex_buffer(opts)
       assert seed_buffer(buffer) == :ok
-      assert {:ok, [%{next_flush: next_flush}]} = ExBuffer.info(buffer)
+      assert [%{next_flush: next_flush}] = ExBuffer.info(buffer)
       refute is_nil(next_flush)
     end
 
     test "will return an error with an invalid buffer" do
-      assert ExBuffer.info(:fake_buffer) == {:error, :not_found}
+      fun = fn -> ExBuffer.info(:fake_buffer) end
+
+      assert_raise ArgumentError, "buffer not found", fun
     end
 
     test "will return an error with an invalid partition" do
       assert {:ok, buffer} = start_ex_buffer()
-      assert ExBuffer.info(buffer, partition: -1) == {:error, :invalid_partition}
+
+      fun = fn -> ExBuffer.info(buffer, partition: -1) end
+
+      assert_raise ArgumentError, "invalid partition", fun
     end
   end
 
@@ -331,7 +281,7 @@ defmodule ExBufferTest do
     test "will insert items into an unpartitioned ExBuffer" do
       assert {:ok, buffer} = start_ex_buffer()
       assert ExBuffer.insert(buffer, "foo") == :ok
-      assert ExBuffer.dump(buffer) == {:ok, ["foo"]}
+      assert ExBuffer.dump(buffer) == ["foo"]
     end
 
     test "will insert items into a partitioned ExBuffer" do
@@ -340,8 +290,8 @@ defmodule ExBufferTest do
       assert {:ok, buffer} = start_ex_buffer(opts)
       assert ExBuffer.insert(buffer, "foo") == :ok
       assert ExBuffer.insert(buffer, "bar") == :ok
-      assert ExBuffer.dump(buffer, partition: 0) == {:ok, ["foo"]}
-      assert ExBuffer.dump(buffer, partition: 1) == {:ok, ["bar"]}
+      assert ExBuffer.dump(buffer, partition: 0) == ["foo"]
+      assert ExBuffer.dump(buffer, partition: 1) == ["bar"]
     end
 
     test "will insert items into a partitioned ExBuffer with a random partitioner" do
@@ -400,7 +350,7 @@ defmodule ExBufferTest do
       assert {:ok, buffer} = start_ex_buffer(opts)
       assert seed_buffer(buffer) == :ok
       assert_receive {^buffer, ["foo", "baz"], _}
-      assert {:ok, [%{length: 1}]} = ExBuffer.info(buffer, partition: 1)
+      assert [%{length: 1}] = ExBuffer.info(buffer, partition: 1)
     end
 
     test "will flush an ExBuffer started from an implementation module" do
@@ -421,7 +371,9 @@ defmodule ExBufferTest do
     end
 
     test "will return an error with an invalid buffer" do
-      assert ExBuffer.insert(:fake_buffer, "foo") == {:error, :not_found}
+      fun = fn -> ExBuffer.insert(:fake_buffer, "foo") end
+
+      assert_raise ArgumentError, "buffer not found", fun
     end
   end
 
@@ -430,8 +382,8 @@ defmodule ExBufferTest do
       items = ["foo", "bar", "baz"]
 
       assert {:ok, buffer} = start_ex_buffer()
-      assert ExBuffer.insert_batch(buffer, items) == {:ok, 3}
-      assert ExBuffer.dump(buffer) == {:ok, ["foo", "bar", "baz"]}
+      assert ExBuffer.insert_batch(buffer, items) == 3
+      assert ExBuffer.dump(buffer) == ["foo", "bar", "baz"]
     end
 
     test "will insert a batch of items into a partitioned ExBuffer" do
@@ -439,8 +391,8 @@ defmodule ExBufferTest do
       items = ["foo", "bar", "baz"]
 
       assert {:ok, buffer} = start_ex_buffer(opts)
-      assert ExBuffer.insert_batch(buffer, items) == {:ok, 3}
-      assert ExBuffer.dump(buffer, partition: 0) == {:ok, ["foo", "bar", "baz"]}
+      assert ExBuffer.insert_batch(buffer, items) == 3
+      assert ExBuffer.dump(buffer, partition: 0) == ["foo", "bar", "baz"]
     end
 
     test "will flush an ExBuffer while inserting a batch of items" do
@@ -448,9 +400,9 @@ defmodule ExBufferTest do
       items = ["foo", "bar", "baz"]
 
       assert {:ok, buffer} = start_ex_buffer(opts)
-      assert ExBuffer.insert_batch(buffer, items) == {:ok, 3}
+      assert ExBuffer.insert_batch(buffer, items) == 3
       assert_receive {^buffer, ["foo", "bar"], _}
-      assert ExBuffer.dump(buffer) == {:ok, ["baz"]}
+      assert ExBuffer.dump(buffer) == ["baz"]
     end
 
     test "will flush an ExBuffer unsafely" do
@@ -458,7 +410,7 @@ defmodule ExBufferTest do
       items = ["foo", "bar", "baz"]
 
       assert {:ok, buffer} = start_ex_buffer(opts)
-      assert ExBuffer.insert_batch(buffer, items, safe_flush: false) == {:ok, 3}
+      assert ExBuffer.insert_batch(buffer, items, flush_mode: :async) == 3
       assert_receive {^buffer, ["foo", "bar", "baz"], _}
     end
   end
